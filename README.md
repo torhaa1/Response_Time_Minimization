@@ -50,7 +50,7 @@ Below is a detailed development log highlighting the progress and methodologies 
 #### Based on a sample of possible police car locations and a set of simulated events,  find the optimal locations for 4 police units to minimize the total response time to all events.
 
 Figure 1 shows the solution with optimal placement of 4 units and their assigned events.   
-<img src="https://github.com/torhaa1/Response_Time_Minimization/blob/main/figures/oslo_4locations_optimal.png" width="700">
+<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_4locations_optimal.png" width="700">
 
 Figure 2 plot the isochrones, showing how far one can reach from the optimal locations in 2, 4 and 8 minutes.
-<img src="https://github.com/torhaa1/Response_Time_Minimization/blob/main/figures/oslo_4locations_isochrones.png" width="700">
+<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_4locations_isochrones.png" width="700">
