@@ -20,7 +20,7 @@ Results can be used to strategically position police units better to ensure rapi
 - [x] Initial exploration and pipeline building: Grünerløkka district in Oslo.
 - [x] Medium sized network: Oslo municipality/Oslo police district.
 - [ ] Large sized networks: (11 police districts) Eastern, SouthEastern, SouthWestern, etc
-- [ ] Max size test: National scale (Norway) and potentially other countries.
+- [ ] Max size network (if ignoring police districts): National scale (Norway).
 
 ## High-level roadmap
 - [x] **Solving the static case**: The initial phase will focus on solving the static case, where the events are fixed and the police units are strategically positioned to minimize response times. This can be used to explore parameters like the number of police units, their locations, and the impact of different response time thresholds.
