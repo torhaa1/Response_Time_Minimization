@@ -1,0 +1,603 @@
+# Utility module to hold functions that are used in the main analysis scripts
+
+"""
+Module to keep most frequently used functions/methods
+"""
+# import packages
+import time
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+import shapely
+from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping
+from shapely.ops import nearest_points, unary_union
+from descartes import PolygonPatch
+import pyproj
+import geopandas as gpd
+import osmnx as ox
+import networkx as nx
+import pandana as pdna
+import pulp
+import highspy
+from scipy.stats import gaussian_kde
+import folium
+
+#######################################################################
+# EVENT POINTS
+#######################################################################
+
+# Function to simulate event points based on population count
+def simulate_event_points(population_gdf, min_range=2000, max_range=2500):
+    """
+    Simulates the number of event points in each gridcell based on its population count.
+    Use a binary search algorithm to find the optimal population multiplier to achieve a target number of points.
+    Target range for the total number of points is defined by [min_target, max_target].    
+    """
+    # Define the target range for the total number of points
+    min_target = min_range
+    max_target = max_range
+    
+    # Initial lower and upper bounds for population_multiplier
+    low = 0.001
+    high = 0.01
+    
+    # Convergence threshold and maximum iterations to prevent infinite loops
+    epsilon = 1e-6
+    max_iterations = 100
+    iteration = 0
+    while iteration < max_iterations:
+        mid = (low + high) / 2
+        
+        # Calculate the number of points using the current guess of population_multiplier
+        population_gdf['num_points'] = np.round(mid * population_gdf['population']).astype(int)
+        population_gdf['num_points'] = np.maximum(population_gdf['num_points'], 0) # Ensure non-negative
+        total_points = population_gdf['num_points'].sum()
+        
+        # Check if the total number of points is within the target range
+        if min_target <= total_points <= max_target:
+            print(f"Total number of simulated event points: {total_points}. Target range [{min_target}, {max_target}], using population multiplier: {mid}")
+            break
+        elif total_points < min_target:
+            low = mid
+        else:
+            high = mid
+        
+        # Check for convergence
+        if abs(high - low) < epsilon:
+            print(f"Convergence reached with multiplier: {mid} (total points: {total_points})")
+            break
+        iteration += 1
+    
+    if iteration == max_iterations:
+        print(f"Max iterations reached with multiplier: {mid} (total points: {total_points})")
+    return population_gdf
+
+
+# Function to generate points within a grid cell
+def generate_points_within_gridcell(num_points, bounds):
+    """
+    Generate points within given bounds.
+    """
+    min_x, min_y, max_x, max_y = bounds
+    xs = np.random.uniform(min_x, max_x, num_points)
+    ys = np.random.uniform(min_y, max_y, num_points)
+    points = [Point(x, y) for x, y in zip(xs, ys)]
+    
+    return points
+
+
+# Function to generate polygon around high-density areas of event points
+def generate_high_density_polygon(event_points_gdf, grid_size=100, density_threshold="median", simplification_tolerance=10.0, plot_results=False):
+    """
+    Generates a polygon covering high-density areas based on event points.
+
+    Parameters:
+    - event_points_gdf: GeoDataFrame containing event points with 'geometry' column.
+    - grid_size: Size of the grid for KDE calculation.
+    - density_threshold: Density threshold to identify high-density areas. Can be 'median', 'mean', or a specific value.
+    - simplification_tolerance: Tolerance for geometry simplification to ensure validity.
+    - plot_results: If True, plots the KDE, high-density areas, and the final polygon.
+
+    Returns:
+    - A GeoDataFrame with a single polygon covering high-density event areas.
+    """
+    # Extract x and y coordinates of the points
+    x = event_points_gdf.geometry.x
+    y = event_points_gdf.geometry.y
+
+    # Perform Kernel Density Estimation
+    kde = gaussian_kde(np.vstack([x, y]))
+    xmin, xmax = x.min(), x.max()
+    ymin, ymax = y.min(), y.max()
+    xgrid, ygrid = np.meshgrid(np.linspace(xmin, xmax, grid_size), np.linspace(ymin, ymax, grid_size))
+    z = kde(np.vstack([xgrid.flatten(), ygrid.flatten()]))
+    z = np.reshape(z, xgrid.shape)
+
+    # print the values, so see what threshold to use with scientific notation and 3 decimals
+    print(f"Density: Min: {z.min():.3e} | Median: {np.median(z):.3e} | Mean: {z.mean():.3e} | Max: {z.max():.3e}")
+
+    # Determine density threshold based on input
+    if density_threshold == 'median':
+        density_threshold = np.median(z)
+    elif density_threshold == 'mean':
+        density_threshold = z.mean()
+    elif isinstance(density_threshold, (float, int)):
+        pass
+    else:
+        raise ValueError("Invalid density_threshold. Choose 'median', 'mean', or a specific numeric value.")
+
+    # Plot the KDE and contours with specified levels
+    fig, ax = plt.subplots(figsize=(5, 5)) if plot_results else plt.subplots()
+    cset = ax.contour(xgrid, ygrid, z, levels=[density_threshold], cmap='Reds')
+    plt.close(fig)  # Close the plot if not needed
+
+    # Extract polygons for high-density areas
+    contour_paths = []
+    for i, collection in enumerate(cset.allsegs):
+        for seg in collection:
+            if len(seg) >= 3:  # Check if the segment can form a valid polygon
+                polygon = Polygon(seg)
+                if polygon.is_valid:
+                    contour_paths.append(polygon)
+
+    if not contour_paths:  # Check if no valid polygons were formed
+        raise ValueError("No valid high-density areas found with the specified threshold.")
+
+    # Union of all high-density area polygons into a single geometry and simplify
+    unioned_polygons = unary_union(contour_paths)
+    simplified_polygon = unioned_polygons.simplify(simplification_tolerance, preserve_topology=True)
+    if not simplified_polygon.is_valid:
+        simplified_polygon = simplified_polygon.buffer(100)
+
+    # Convert the resulting polygon into a GeoDataFrame
+    final_polygon_gdf = gpd.GeoDataFrame([{'geometry': simplified_polygon}], crs=event_points_gdf.crs)
+
+    # Optionally plot the final result
+    if plot_results:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        final_polygon_gdf.boundary.plot(ax=ax, color='blue')
+        event_points_gdf.plot(ax=ax, color='red', markersize=5)
+        plt.title('Final Area of Interest')
+        plt.show()
+    return final_polygon_gdf
+
+
+#######################################################################
+# CAR POINTS
+#######################################################################
+
+# Function to filter and plot nodes by closeness centrality
+def filter_and_plot_nodes_by_centrality(geo_df, top_percent, bottom_percent, input_graph, plot=False):
+    """
+    Filters a GeoDataFrame to find the top X% and bottom Y% of nodes based on closeness_centrality,
+    optionally plots these nodes, and returns a filtered GeoDataFrame excluding the bottom Y% nodes.
+    
+    :param geo_df: GeoDataFrame with a 'closeness_centrality' column and 'x', 'y' for plotting.
+    :param top_percent: The top percentage of nodes to select based on closeness_centrality.
+    :param bottom_percent: The bottom percentage of nodes to select based on closeness_centrality.
+    :param plot: Whether to plot the nodes.
+    :return: A filtered GeoDataFrame excluding the bottom Y% closeness_centrality nodes.
+    """
+    # Calculate the number of nodes for each selection
+    num_top = int(len(geo_df) * top_percent)
+    num_bottom = int(len(geo_df) * bottom_percent)
+    
+    # Sort the DataFrame by closeness_centrality
+    sorted_geo_df = geo_df.sort_values(by='closeness_centrality', ascending=False)
+    
+    # Select the top X% and bottom Y%
+    central_car_nodes = sorted_geo_df.head(num_top)
+    remote_car_nodes = sorted_geo_df.tail(num_bottom)
+
+    print(f"Input nr of car nodes: {len(geo_df)}")
+    print(f"Remaining nr of car nodes: {len(sorted_geo_df) - len(remote_car_nodes)}, after discarding the {len(remote_car_nodes)} ({bottom_percent*100:.0f}%) remote car nodes with lowest closeness centrality\n")
+    if plot:
+        # Plot all nodes
+        fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
+        ax.scatter(geo_df['x'], geo_df['y'], c='white', s=50, label="Input Car nodes")
+        ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% centrality")
+        ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% centrality")
+        ax.legend()
+        plt.show()
+    
+    # Remove the bottom Y% nodes from the original GeoDataFrame
+    filtered_geo_df = sorted_geo_df.drop(remote_car_nodes.index)
+    return filtered_geo_df
+
+
+# Function to filter and plot nodes by proximity to each other (minimum distance)
+def filter_nodes_by_proximity(geo_df, min_distance, input_graph, criterion_col=None, prefer='higher', plot=False):
+    """
+    Removes nodes from a GeoDataFrame that are within a specified minimum distance of each other.
+    
+    :param geo_df: GeoDataFrame with a 'geometry' column.
+    :param min_distance: Minimum distance in the GeoDataFrame's coordinate reference system units.
+    :param input_graph: The graph from which the nodes were extracted, used for plotting.
+    :param criterion_col: Column name to use as a criterion for removing nodes. Optional.
+    :param prefer: Determines which node to keep based on the criterion_col ('higher' or 'lower').
+    :param plot: Whether to plot the nodes.
+    :return: A filtered GeoDataFrame excluding nodes within the minimum distance of each other.
+    """
+    sindex = geo_df.sindex # Create a spatial index for the GeoDataFrame
+    to_remove = [] # List to keep track of indices to remove
+    
+    # Iterate over the GeoDataFrame
+    for index, row in geo_df.iterrows():
+        # Create a buffer around the geometry and find potential matches using the spatial index
+        buffer = row.geometry.buffer(min_distance)
+        possible_matches_index = list(sindex.intersection(buffer.bounds))
+        possible_matches = geo_df.iloc[possible_matches_index]
+        
+        # Actual neighbors are those within the specified distance, excluding the row itself
+        actual_neighbors = possible_matches[possible_matches.distance(row.geometry) < min_distance]
+        actual_neighbors = actual_neighbors.drop(index, errors='ignore')
+        
+        for neighbor_index, neighbor in actual_neighbors.iterrows():
+            if criterion_col:
+                # Decide which node to remove based on the criterion
+                if (prefer == 'higher' and neighbor[criterion_col] > row[criterion_col]) or \
+                   (prefer == 'lower' and neighbor[criterion_col] < row[criterion_col]):
+                    to_remove.append(index)
+                    break  # Current node will be removed, no need to check other neighbors
+                else:
+                    to_remove.append(neighbor_index)
+            else:
+                # If no criterion is given, default to removing the neighbor
+                to_remove.append(neighbor_index)
+    
+    # Remove duplicates and drop the nodes
+    to_remove = list(set(to_remove))
+    filtered_geo_df = geo_df.drop(index=to_remove)
+    
+    # Reset index to clean up the DataFrame
+    filtered_geo_df.reset_index(drop=True, inplace=True)
+
+    print(f"Input nr of car nodes: {len(geo_df)}")
+    print(f"Remaining nr of car nodes: {len(geo_df) - len(to_remove)}, after removing the {len(to_remove)} nodes that are within {min_distance} m of each other\n")
+
+    if plot:
+        # Plot all nodes
+        fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
+        ax.scatter(geo_df.loc[to_remove, 'x'], geo_df.loc[to_remove, 'y'], c='red', s=50, label="Removed car nodes")
+        ax.scatter(filtered_geo_df['x'], filtered_geo_df['y'], c='orange', s=50, label=f"Remaining car nodes")
+        ax.legend(); plt.show()
+    return filtered_geo_df
+
+
+#######################################################################
+# COST MATRIX
+#######################################################################
+
+# Function to convert CostMatrix to dict + problem size reduction
+def preprocess_cost_matrix(CostMatrix, discard_threshold=0.30, verbose=True):
+    """
+    Preprocesses the Cost Matrix by removing duplicates, converting it to a dictionary for faster lookup,
+    and reducing the problem size by discarding the highest travel times based on a specified threshold.
+
+    Parameters:
+    - CostMatrix (pd.DataFrame): The original cost matrix with columns ['carNodeID', 'eventNodeID', 'travel_time'].
+    - discard_threshold (float): The fraction of the highest travel times to discard. Default is 0.30.
+    - verbose (bool): If True, prints statistics about the preprocessing. Default is True.
+
+    Returns:
+    - dict: A dictionary of the reduced cost matrix with (carNodeID, eventNodeID) as keys and 'travel_time' as values.
+    """
+
+    # Remove duplicates while keeping the first occurrence
+    CostMatrix_unique = CostMatrix.drop_duplicates(subset=['carNodeID', 'eventNodeID'], keep='first')
+
+    # Convert to a dictionary for fast lookup
+    CostMatrix_dict = CostMatrix_unique.set_index(['carNodeID', 'eventNodeID'])['travel_time'].to_dict()
+
+    # Determine the maximum acceptable travel time based on the discard threshold
+    max_acceptable_travel_time = np.percentile(list(CostMatrix_dict.values()), 100 * (1 - discard_threshold))
+
+    # Filter out pairs exceeding the maximum acceptable travel time
+    CostMatrix_dict_reduced = {pair: time for pair, time in CostMatrix_dict.items() if time <= max_acceptable_travel_time}
+
+    if verbose:
+        # Print statistics for the reduced CostMatrix_dict
+        print(f"Filtering out {discard_threshold*100:.0f}% highest travel times - keeping only travel times <= {max_acceptable_travel_time:.0f} sec, or {max_acceptable_travel_time/60:.1f} min")
+        print(f"Original nr of pairs: {len(CostMatrix_dict)} | Filtered nr of pairs: {len(CostMatrix_dict_reduced)}")
+        print(f"Original max travel time: {np.max(list(CostMatrix_dict.values()))} | Filtered max travel time: {np.max(list(CostMatrix_dict_reduced.values()))}")
+        print(f"Original min travel time: {np.min(list(CostMatrix_dict.values()))} | Filtered min travel time: {np.min(list(CostMatrix_dict_reduced.values()))}")
+
+    return CostMatrix_dict_reduced
+
+
+
+#######################################################################
+# PuLP
+#######################################################################
+
+# Functioon to define PuLP problem
+def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_capacity=300, problem_name="PoliceCarLocationOptimization", verbose=True):
+    """
+    Defines the PuLP problem for the Police Car Location Optimization.
+
+    Parameters:
+    - CostMatrix (pd.DataFrame): The original cost matrix with columns ['carNodeID', 'eventNodeID', 'travel_time'].
+    - CostMatrix_dict_reduced (dict): A dictionary of the reduced cost matrix with (carNodeID, eventNodeID) as keys and 'travel_time' as values.
+    - nr_of_cars (int): The number of police cars to place in the final solution. Default is 4.
+    - car_capacity (int): The maximum number of events a single police car can respond to. Default is 300.
+    - problem_name (str): The name of the PuLP problem. Default is "PoliceCarLocationOptimization".
+    - verbose (bool): If True, prints statistics about the problem setup. Default is True.
+
+    Returns:
+    - pulp.LpProblem: The defined PuLP problem.
+    """
+
+
+    # Start timer to time this function
+    start_time = time.time()
+
+
+
+    # Setup the problem
+    K = 4  # Number of police car locations in final solution
+    M = 280   # Maximum number of events a single police car can respond to
+
+    # Sets
+    P = CostMatrix['carNodeID'].unique()  # Potential police car locations
+    E = CostMatrix['eventNodeID'].unique()  # Events
+
+    # Create the LP object - minimize total travel time
+    problem = pulp.LpProblem(problem_name, pulp.LpMinimize) # Minimization problem
+
+    if verbose:
+        print(f"Number of police car locations: {len(P)}")
+        print(f"Number of events: {len(E)}")
+        # print(problem)
+
+    # Decision Variables
+    # x[i] = 1 if a police car is placed at location i, 0 otherwise
+    x = pulp.LpVariable.dicts("x", P, cat='Binary')  # Police car placement
+
+    # # y[i, j] = 1 if event j is assigned to police car i, 0 otherwise
+    y = pulp.LpVariable.dicts("y", CostMatrix_dict_reduced.keys(), cat='Binary')  # Event assignment
+
+    # Objective Function - Modified to use CostMatrix_dict_reduced for fast lookup
+    # problem += pulp.lpSum([CostMatrix_dict[(i, j)] * y[(i, j)] for i in P for j in E if (i, j) in CostMatrix_dict]), "TotalResponseTime"
+    problem += pulp.lpSum([CostMatrix_dict_reduced[(i, j)] * y[(i, j)] for i in P for j in E if (i, j) in CostMatrix_dict_reduced]), "TotalResponseTime"
+
+    # Constraints
+    # Police Car Placement Constraint
+    problem += pulp.lpSum([x[i] for i in P]) == K, "NumberOfPoliceCars"
+
+    # Event Assignment Constraint
+    for j in E:
+        problem += pulp.lpSum([y[(i, j)] for i in P if (i, j) in CostMatrix_dict_reduced]) == 1, f"EventAssignment_{j}"
+
+    # Validity Constraint
+    for (i, j) in CostMatrix_dict_reduced:
+        problem += y[(i, j)] <= x[i], f"Validity_{i}_{j}"
+
+    # Capacity Constraint
+    for i in P:
+        problem += pulp.lpSum([y[(i, j)] for j in E if (i, j) in CostMatrix_dict_reduced]) <= M * x[i], f"Capacity_{i}"
+
+    # end timer
+    end_time = time.time()
+
+    if verbose:
+        # Print statistics about the problem
+        print(f"Number of decision variables: {len(problem.variables())}")
+        print(f"Number of constraints: {len(problem.constraints)}")
+        print(f"Number of non-zero coefficients: {len(problem.variables())}")
+        print(f"Number of non-zero coefficients in the objective function: {len(problem.objective)}")
+        print(f"Problem setup took {end_time - start_time:.2f} seconds")
+
+    return problem
+
+
+# Function to run solvers - first fast LP relaxation, then MILP
+def run_solvers(problem, P, nr_of_locations, solver_name='PULP_CBC_CMD', forceMIP=False, plot=False):
+    """
+    Run the PULP solver with different configurations to find the optimal solution.
+    If the faster solver does not find the optimal solution, switch to the slower solver.
+    """
+    # Use the faster solver first with integer variable relaxation
+    if solver_name == 'PULP_CBC_CMD':
+        status = problem.solve(pulp.PULP_CBC_CMD(mip=False, msg=False))
+    elif solver_name == 'COIN_CMD':
+        status = problem.solve(pulp.COIN_CMD(mip=False, msg=False))
+    elif solver_name == 'GLPK_CMD':
+        status = problem.solve(pulp.GLPK_CMD(mip=False, msg=False, timeLimit=120)) # 2 minutes time limit
+    elif solver_name == 'HiGHS':
+        status = problem.solve(pulp.HiGHS(mip=False, msg=False, parallel="on"))
+    
+    # check the number of optimal locations found from problem
+    # remember that to use x[i], I have to define it as a dictionary
+    #     # define the decision variables x, y
+    # x = problem.variables()[0]
+    # y = problem.variables()[1]
+    # optimal_locations = np.array([i for i in P if x[i].varValue == 1])
+
+    optimal_locations = np.array([i for i in P if problem.variablesDict()[f"x_{i}"].varValue == 1])
+    log_df = pd.DataFrame([{'Variable': v.name, 'Value': v.varValue} for v in problem.variables()]) # Log optimization results
+
+    # Verify if nr of locations is correct
+    if (len(optimal_locations) == nr_of_locations) and (plot == True):
+            # if the fast LP solver finds the correct amount of locations, plot only this one
+            print(f"{solver_name} with LP relaxation successful: {optimal_locations}")
+            plt.figure(figsize=(5, 3))
+            log_df['Value'].sort_values().reset_index(drop=True).plot()
+            plt.ylabel('Value'); plt.xlabel('Combination'); plt.title('Optimization Results (Fast LP solver)')
+            plt.grid(linestyle='-', alpha=0.5); plt.tight_layout(); plt.show()
+    # If solution from fast solver is invalid, switch to slow MILP solver
+    if (len(optimal_locations) < nr_of_locations) or forceMIP:
+        print(f"{solver_name} with LP relaxation found {len(optimal_locations)}/{nr_of_locations} locations in {problem.solutionTime:.2f} seconds.")
+        print("Switching to MILP solver configuration to find optimal solution.\n")
+        if solver_name == 'PULP_CBC_CMD':
+            status = problem.solve(pulp.PULP_CBC_CMD(mip=True, msg=False))
+        elif solver_name == 'COIN_CMD':
+            status = problem.solve(pulp.COIN_CMD(mip=True, msg=False))
+        elif solver_name == 'GLPK_CMD':
+            status = problem.solve(pulp.GLPK_CMD(mip=True, msg=False, timeLimit=120)) # 2 minutes time limit
+        elif solver_name == 'HiGHS':
+            status = problem.solve(pulp.HiGHS(mip=True, msg=False, parallel="on"))
+        status = problem.solve(pulp.PULP_CBC_CMD(mip=True, msg=False))
+        optimal_locations = np.array([i for i in P if problem.variablesDict()[f"x_{i}"].varValue == 1])
+
+        if plot:
+            log_df2 = pd.DataFrame([{'Variable': v.name, 'Value': v.varValue} for v in problem.variables()]) # Log optimization result
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3))
+            log_df['Value'].sort_values().reset_index(drop=True).plot(ax=ax1)
+            log_df2['Value'].sort_values().reset_index(drop=True).plot(ax=ax2)
+            ax1.set_ylabel('Value'); ax1.set_xlabel('Combinations'); ax1.set_title('Optimization Results (Fast LP solver)')
+            ax2.set_ylabel('Value'); ax2.set_xlabel('Combinations'); ax2.set_title('Optimization Results (Slow MILP solver)')
+            ax1.grid(linestyle='-', alpha=0.5); ax2.grid(linestyle='-', alpha=0.5); plt.tight_layout(); plt.show()
+        
+    # Print the stats from final solver
+    print(f"Optimal police car locations found: {len(optimal_locations)}/{nr_of_locations} in {problem.solutionTime:.2f} seconds: {optimal_locations}")
+    print(f"Solver: {solver_name} | Status: {problem.status} ({pulp.LpStatus[problem.status]})")
+    print(f"Objective function value (total response time): {pulp.value(problem.objective):.4f} seconds, or {pulp.value(problem.objective)/60:.2f} minutes, or {pulp.value(problem.objective)/3600:.2f} hours")
+    return optimal_locations
+
+
+#######################################################################
+# VISUALIZATION
+#######################################################################
+
+# Functionto plot optimal locations on a map
+def plot_optimal_allocations(road_network, optimal_police_locations_gdf, optimal_police_locations, results_df, car_nodes_gdf_filtered, event_points_gdf, NR_OF_CARS, CAR_CAPACITY, problem):
+
+    # plot the optimal police car locations and the events assigned to them
+    fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=(10,10))
+
+    # Plotting optimal police car locations
+    # Assuming 'x' and 'y' in CostMatrix_extended are in UTM coordinates
+    # colors = ['cyan', 'magenta', 'yellow', 'green']
+    for i, police_car in enumerate(optimal_police_locations_gdf.index):
+        police_car_id = optimal_police_locations[i]
+        ax.scatter(optimal_police_locations_gdf.loc[police_car, 'geometry'].x, optimal_police_locations_gdf.loc[police_car, 'geometry'].y, c=f'C{i}', marker='*', edgecolor='cyan', linewidth=1.8, s=800, label=f"Police car id: {police_car_id}", zorder=3)
+
+    # Plotting events assigned to each optimal police car
+    for car_id in optimal_police_locations:
+        assigned_events = results_df[results_df['carNodeID'] == car_id]
+        event_coords = list(zip(assigned_events['y'], assigned_events['x']))
+        ax.scatter([x for _, x in event_coords], [y for y, _ in event_coords], s=75, edgecolor='black', lw=0.80, label=f'Events for car: {car_id}', zorder=2)
+
+    # Enhance legend to avoid duplicate labels
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    # place legend outside in box on right side
+    plt.legend(by_label.values(), by_label.keys(), loc='upper left', bbox_to_anchor=(1.0, 1))
+
+    print("Input parameters:")
+    print(f"- Possible police car locations: {len(car_nodes_gdf_filtered)} | Optimal locations in solution: {NR_OF_CARS}")
+    print(f"- Events: {len(event_points_gdf)} | Max event capacity per police car: {CAR_CAPACITY}\n")
+
+    print("Solution from Linear Programming (LP) model:")
+    print(f"Goal: minimize objective function (total response time)")
+    print(f"Objective function value: {pulp.value(problem.objective):.0f} sec | {pulp.value(problem.objective)/60:.1f} min | {pulp.value(problem.objective)/3600:.2f} hours\n")
+
+    for car_id in results_df['carNodeID'].unique():
+        assigned_events = results_df[results_df['carNodeID'] == car_id]
+        total_events = len(assigned_events)
+        total_response_time = assigned_events['travel_time'].sum() / 60 # convert to minutes
+        avg_response_time = assigned_events['travel_time'].mean()  / 60 # convert to minutes
+        capacity_usage = (total_events / CAR_CAPACITY) * 100
+        
+        print(f"Police car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Avg response time: {avg_response_time:.2f} min")
+
+    plt.show()
+
+# Create isochrone polygons
+def make_iso_polys(G, trip_times, center_nodes, edge_buff=30, node_buff=0, infill=True):
+    """
+    Generate isochrone polygons for given center nodes in a graph.
+    """
+    all_isochrone_polys = []
+    for center_node in center_nodes:
+        isochrone_polys = []
+        for trip_time in sorted(trip_times, reverse=True):
+            subgraph = nx.ego_graph(G, center_node, radius=trip_time*60, distance='travel_time')
+            if subgraph.number_of_nodes() == 0 or subgraph.number_of_edges() == 0:
+                # Skip if subgraph is empty
+                continue
+            
+            # Mapping node IDs to Points
+            node_id_to_point = {node: Point(data['x'], data['y']) for node, data in subgraph.nodes(data=True)}
+            
+            edge_lines = []
+            for n_from, n_to in subgraph.edges():
+                f_point = node_id_to_point[n_from]
+                t_point = node_id_to_point[n_to]
+                edge_lines.append(LineString([f_point, t_point]))
+
+            # Buffer nodes and edges, then combine
+            n = gpd.GeoSeries([node_id_to_point[node] for node in subgraph.nodes()]).buffer(node_buff)
+            e = gpd.GeoSeries(edge_lines).buffer(edge_buff)
+            all_gs = list(n) + list(e)
+            new_iso = gpd.GeoSeries(all_gs).unary_union
+            
+            # Handling infill
+            if infill and isinstance(new_iso, Polygon):
+                new_iso = Polygon(new_iso.exterior)
+                
+            isochrone_polys.append(new_iso)
+        all_isochrone_polys.append(isochrone_polys)
+    return all_isochrone_polys
+    
+
+# Merge isochrones to prevent overlap
+def merge_isochrones(G, isochrone_polys):
+    """
+    Merge isochrones to prevent overlap.
+    """
+    # Initialize containers for merged isochrones by range
+    merged_short = []; merged_middle = []; merged_long = []
+
+    # Populate the lists with polygons to merge
+    for location_polygons in isochrone_polys:
+        if len(location_polygons) >= 1:
+            merged_short.append(location_polygons[0])  # Assuming first is short-range
+        if len(location_polygons) >= 2:
+            merged_middle.append(location_polygons[1])  # Assuming second is middle-range
+        if len(location_polygons) == 3:
+            merged_long.append(location_polygons[2])  # Assuming third is long-range
+
+    # Perform the merging
+    merged_short_union = unary_union(merged_short)
+    merged_middle_union = unary_union(merged_middle)
+    merged_long_union = unary_union(merged_long)
+    return merged_short_union, merged_middle_union, merged_long_union
+
+
+# Function to plot the isochrones on a Leaflet map using osmnx and folium
+def plot_leaflet_map(road_network, trip_times, merged_isochrones, background_polygon_gdf, background_poly=False):
+
+    # reverse order of trip_times
+    trip_times.sort(reverse=True)
+
+    # Prepare data for GeoDataFrame
+    data = {
+        'trip_time': trip_times,
+        'geometry': [merged_isochrones[0], merged_isochrones[1], merged_isochrones[2]]
+    }
+    # Convert dictionary to GeoDataFrame
+    crs_proj = ox.graph_to_gdfs(road_network, nodes=False).crs  # Adjusted to explicitly state nodes=False
+    isochrones_gdf = gpd.GeoDataFrame(data, crs=crs_proj)
+
+    # Visualize the merged isochrones on a Leaflet map
+    leaflet_map = isochrones_gdf.explore(
+        column='trip_time',  # trip_time column to differentiate the isochrones
+        cmap='RdPu',  # color map
+        tiles='OpenStreetMap',  # 'OpenStreetMap' for light tiles, 'CartoDB dark_matter' for dark tiles
+        style_kwds={'fillOpacity': 0.35, 'lineOpacity': 0.7},  # Adjust opacities as needed
+        legend=True,  # Legend to differentiate ranges
+        tooltip=True  # Display trip times on hover
+    )
+
+    if background_poly:
+        # Add background polygon to outline police district, but loose hover-legend functionality
+        folium.GeoJson(
+            background_polygon_gdf.geometry,
+            style_function=lambda x: {'color': 'black', 'weight': 0.5, 'fillOpacity': 0.1, 'lineOpacity': 0.7}
+        ).add_to(leaflet_map)
+
+    return leaflet_map
+
