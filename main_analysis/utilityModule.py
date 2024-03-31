@@ -163,6 +163,37 @@ def generate_high_density_polygon(event_points_gdf, grid_size=100, density_thres
         plt.show()
     return final_polygon_gdf
 
+# Method to plot the population density, simulated event points, and high population density areas side-by-side
+def plot_population_density_and_event_points(district_boundary, population_gdf, event_points_gdf, high_pop_density_area, edges):
+
+    # Adjusted figure size and added gridspec_kw for spacing
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 10), gridspec_kw={'wspace': 0.5})
+    vmin, vmax = 0, 200
+
+    # Population Density
+    district_boundary.boundary.plot(ax=ax1, color='black', linewidth=0.5, alpha=0.7)
+    population_gdf.plot(ax=ax1, column='population', cmap='Reds', legend=True, alpha=0.7, vmin=vmin, vmax=vmax)
+    ax1.get_xaxis().set_visible(False)
+    ax1.get_yaxis().set_visible(False)
+    ax1.set_title('Population density', pad=20)
+
+    # Simulated Event Points - based on population density
+    district_boundary.boundary.plot(ax=ax2, color='black', linewidth=0.5, alpha=0.7)
+    event_points_gdf.plot(ax=ax2, color='red', markersize=10, alpha=0.7, edgecolor='black', lw=0.5)
+    ax2.get_xaxis().set_visible(False)
+    ax2.get_yaxis().set_visible(False)
+    ax2.set_title(f"Simulated event points: {len(event_points_gdf)}", pad=20)
+
+    # Combined plot of Simulated Event Points and (derived) High Population Density Areas
+    edges.plot(ax=ax3, linewidth=0.3, color='gray', alpha=0.5, zorder=-1)
+    district_boundary.boundary.plot(ax=ax3, color='black', linewidth=0.5, alpha=0.7)
+    high_pop_density_area.boundary.plot(ax=ax3, color='blue', linewidth=2, alpha=0.7)
+    event_points_gdf.plot(ax=ax3, color='red', markersize=10, alpha=0.7, edgecolor='black', lw=0.5)
+    ax3.get_xaxis().set_visible(False)
+    ax3.get_yaxis().set_visible(False)
+    ax3.set_title('High population density areas', pad=20)
+    # plt.tight_layout()
+    plt.show()
 
 #######################################################################
 # CAR POINTS
@@ -329,15 +360,12 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     - pulp.LpProblem: The defined PuLP problem.
     """
 
-
     # Start timer to time this function
     start_time = time.time()
 
-
-
     # Setup the problem
-    K = 4  # Number of police car locations in final solution
-    M = 280   # Maximum number of events a single police car can respond to
+    # K = 4  # Number of police car locations in final solution
+    # M = 280   # Maximum number of events a single police car can respond to
 
     # Sets
     P = CostMatrix['carNodeID'].unique()  # Potential police car locations
@@ -349,7 +377,6 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     if verbose:
         print(f"Number of police car locations: {len(P)}")
         print(f"Number of events: {len(E)}")
-        # print(problem)
 
     # Decision Variables
     # x[i] = 1 if a police car is placed at location i, 0 otherwise
@@ -359,12 +386,11 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     y = pulp.LpVariable.dicts("y", CostMatrix_dict_reduced.keys(), cat='Binary')  # Event assignment
 
     # Objective Function - Modified to use CostMatrix_dict_reduced for fast lookup
-    # problem += pulp.lpSum([CostMatrix_dict[(i, j)] * y[(i, j)] for i in P for j in E if (i, j) in CostMatrix_dict]), "TotalResponseTime"
     problem += pulp.lpSum([CostMatrix_dict_reduced[(i, j)] * y[(i, j)] for i in P for j in E if (i, j) in CostMatrix_dict_reduced]), "TotalResponseTime"
 
     # Constraints
     # Police Car Placement Constraint
-    problem += pulp.lpSum([x[i] for i in P]) == K, "NumberOfPoliceCars"
+    problem += pulp.lpSum([x[i] for i in P]) == nr_of_cars, "NumberOfPoliceCars"
 
     # Event Assignment Constraint
     for j in E:
@@ -376,7 +402,7 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
 
     # Capacity Constraint
     for i in P:
-        problem += pulp.lpSum([y[(i, j)] for j in E if (i, j) in CostMatrix_dict_reduced]) <= M * x[i], f"Capacity_{i}"
+        problem += pulp.lpSum([y[(i, j)] for j in E if (i, j) in CostMatrix_dict_reduced]) <= car_capacity * x[i], f"Capacity_{i}"
 
     # end timer
     end_time = time.time()
@@ -387,7 +413,7 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
         print(f"Number of constraints: {len(problem.constraints)}")
         print(f"Number of non-zero coefficients: {len(problem.variables())}")
         print(f"Number of non-zero coefficients in the objective function: {len(problem.objective)}")
-        print(f"Problem setup took {end_time - start_time:.2f} seconds")
+        print(f"PuLP Problem setup took {end_time - start_time:.2f} seconds")
 
     return problem
 
@@ -407,13 +433,6 @@ def run_solvers(problem, P, nr_of_locations, solver_name='PULP_CBC_CMD', forceMI
         status = problem.solve(pulp.GLPK_CMD(mip=False, msg=False, timeLimit=120)) # 2 minutes time limit
     elif solver_name == 'HiGHS':
         status = problem.solve(pulp.HiGHS(mip=False, msg=False, parallel="on"))
-    
-    # check the number of optimal locations found from problem
-    # remember that to use x[i], I have to define it as a dictionary
-    #     # define the decision variables x, y
-    # x = problem.variables()[0]
-    # y = problem.variables()[1]
-    # optimal_locations = np.array([i for i in P if x[i].varValue == 1])
 
     optimal_locations = np.array([i for i in P if problem.variablesDict()[f"x_{i}"].varValue == 1])
     log_df = pd.DataFrame([{'Variable': v.name, 'Value': v.varValue} for v in problem.variables()]) # Log optimization results
@@ -438,7 +457,6 @@ def run_solvers(problem, P, nr_of_locations, solver_name='PULP_CBC_CMD', forceMI
             status = problem.solve(pulp.GLPK_CMD(mip=True, msg=False, timeLimit=120)) # 2 minutes time limit
         elif solver_name == 'HiGHS':
             status = problem.solve(pulp.HiGHS(mip=True, msg=False, parallel="on"))
-        status = problem.solve(pulp.PULP_CBC_CMD(mip=True, msg=False))
         optimal_locations = np.array([i for i in P if problem.variablesDict()[f"x_{i}"].varValue == 1])
 
         if plot:
@@ -457,26 +475,71 @@ def run_solvers(problem, P, nr_of_locations, solver_name='PULP_CBC_CMD', forceMI
     return optimal_locations
 
 
+# function to create car to events assignment
+def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car_capacity, nr_of_unique_events, verbose=False):
+    """
+    Create a Dataframe with the assigned events to each police car based on the PuLP problem solution.
+    """
+
+    # Initialize a dictionary to hold the assignment of events to each car
+    car_to_events_assignment = {car: [] for car in optimal_locations.keys()}
+
+    # Iterate over the 'y' variables to extract assignments
+    for var in problem.variables():
+        if var.name.startswith("y") and var.varValue == 1:
+            # Extract carNodeID and eventNodeID from the variable name
+            _, car_event_pair = var.name.split("_", 1)
+            carNodeID, eventNodeID = car_event_pair.strip("()").split(",_")
+            carNodeID = int(carNodeID)
+            eventNodeID = int(eventNodeID)
+            car_to_events_assignment[carNodeID].append(eventNodeID)
+
+    if verbose:
+        # Verify assigned events respects the max capacity constraint
+        total_events = 0
+        for car, events in car_to_events_assignment.items():
+            print(f"Car {car} is assigned {len(events)}/{car_capacity} events")
+            total_events += len(events)
+        print(f"Summing the events for each car gives {total_events} events, which should equal the total number of unique events: {nr_of_unique_events}")
+    
+    # Prepare the data for DataFrame creation
+    data_for_df = []
+    for car, events in car_to_events_assignment.items():
+        for event in events:
+            data_for_df.append({"carNodeID": car, "eventNodeID": event})
+
+    # Create and merge DataFrame
+    car_to_events_df = pd.DataFrame(data_for_df)
+    car_to_events_df = pd.merge(car_to_events_df, CostMatrix_extended[['carNodeID', 'eventNodeID', 'distance', 'travel_time', 'x', 'y']], on=['carNodeID', 'eventNodeID'], how='left')
+
+    # drop duplicates and keep first occurrence
+    car_to_events_df = car_to_events_df.drop_duplicates(subset=['carNodeID', 'eventNodeID'], keep='first')
+
+    return car_to_events_df
+
 #######################################################################
 # VISUALIZATION
 #######################################################################
 
-# Functionto plot optimal locations on a map
-def plot_optimal_allocations(road_network, optimal_police_locations_gdf, optimal_police_locations, results_df, car_nodes_gdf_filtered, event_points_gdf, NR_OF_CARS, CAR_CAPACITY, problem):
+# Method to plot final locations and assigned events
+def plot_optimal_allocations(road_network, optimal_locations_gdf, car_to_events_df, 
+                        car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem):
 
     # plot the optimal police car locations and the events assigned to them
     fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=(10,10))
 
+    # derived unique car locations from optimal_locations_gdf
+    carNodeID_list = list(optimal_locations_gdf['carNodeID'])
+
     # Plotting optimal police car locations
-    # Assuming 'x' and 'y' in CostMatrix_extended are in UTM coordinates
-    # colors = ['cyan', 'magenta', 'yellow', 'green']
-    for i, police_car in enumerate(optimal_police_locations_gdf.index):
-        police_car_id = optimal_police_locations[i]
-        ax.scatter(optimal_police_locations_gdf.loc[police_car, 'geometry'].x, optimal_police_locations_gdf.loc[police_car, 'geometry'].y, c=f'C{i}', marker='*', edgecolor='cyan', linewidth=1.8, s=800, label=f"Police car id: {police_car_id}", zorder=3)
+    # use enumerate to get the carNodeID
+    for i, police_car in enumerate(carNodeID_list):
+        ax.scatter(optimal_locations_gdf.loc[i, 'geometry'].x, optimal_locations_gdf.loc[i, 'geometry'].y, c=f'C{i}', 
+                marker='*', edgecolor='cyan', linewidth=1.8, s=800, label=f"Police car id: {police_car}", zorder=3)
 
     # Plotting events assigned to each optimal police car
-    for car_id in optimal_police_locations:
-        assigned_events = results_df[results_df['carNodeID'] == car_id]
+    for car_id in carNodeID_list:
+        assigned_events = car_to_events_df[car_to_events_df['carNodeID'] == car_id]
         event_coords = list(zip(assigned_events['y'], assigned_events['x']))
         ax.scatter([x for _, x in event_coords], [y for y, _ in event_coords], s=75, edgecolor='black', lw=0.80, label=f'Events for car: {car_id}', zorder=2)
 
@@ -487,23 +550,23 @@ def plot_optimal_allocations(road_network, optimal_police_locations_gdf, optimal
     plt.legend(by_label.values(), by_label.keys(), loc='upper left', bbox_to_anchor=(1.0, 1))
 
     print("Input parameters:")
-    print(f"- Possible police car locations: {len(car_nodes_gdf_filtered)} | Optimal locations in solution: {NR_OF_CARS}")
-    print(f"- Events: {len(event_points_gdf)} | Max event capacity per police car: {CAR_CAPACITY}\n")
-
+    print(f"- Possible police car locations: {len(car_nodes_gdf_filtered)} | Optimal locations in solution: {nr_of_cars}")
+    print(f"- Events: {nr_of_unique_events} | Max event capacity per police car: {car_capacity}\n")
     print("Solution from Linear Programming (LP) model:")
     print(f"Goal: minimize objective function (total response time)")
     print(f"Objective function value: {pulp.value(problem.objective):.0f} sec | {pulp.value(problem.objective)/60:.1f} min | {pulp.value(problem.objective)/3600:.2f} hours\n")
 
-    for car_id in results_df['carNodeID'].unique():
-        assigned_events = results_df[results_df['carNodeID'] == car_id]
+    for car_id in car_to_events_df['carNodeID'].unique():
+        assigned_events = car_to_events_df[car_to_events_df['carNodeID'] == car_id]
         total_events = len(assigned_events)
         total_response_time = assigned_events['travel_time'].sum() / 60 # convert to minutes
         avg_response_time = assigned_events['travel_time'].mean()  / 60 # convert to minutes
-        capacity_usage = (total_events / CAR_CAPACITY) * 100
+        capacity_usage = (total_events / car_capacity) * 100
         
         print(f"Police car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Avg response time: {avg_response_time:.2f} min")
 
     plt.show()
+
 
 # Create isochrone polygons
 def make_iso_polys(G, trip_times, center_nodes, edge_buff=30, node_buff=0, infill=True):
@@ -569,7 +632,19 @@ def merge_isochrones(G, isochrone_polys):
 
 # Function to plot the isochrones on a Leaflet map using osmnx and folium
 def plot_leaflet_map(road_network, trip_times, merged_isochrones, background_polygon_gdf, background_poly=False):
+    """
+    Function to plot the merged isochrones on a Leaflet map using osmnx and folium.
 
+    Parameters:
+    - road_network (networkx.MultiDiGraph): The road network graph.
+    - trip_times (list): A list of trip times in seconds.
+    - merged_isochrones (tuple): A tuple of merged isochrones for short, middle, and long ranges.
+    - background_polygon_gdf (geopandas.GeoDataFrame): A GeoDataFrame with the background polygon.
+    - background_poly (bool): Whether to include the background polygon. Default is False.
+
+    Returns:
+    - folium.Map: The Leaflet map with the isochrones.
+    """
     # reverse order of trip_times
     trip_times.sort(reverse=True)
 
