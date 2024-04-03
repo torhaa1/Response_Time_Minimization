@@ -199,37 +199,43 @@ def plot_population_density_and_event_points(district_boundary, population_gdf, 
 # CAR POINTS
 #######################################################################
 
-# Function to filter and plot nodes by closeness centrality
-def filter_and_plot_nodes_by_centrality(geo_df, top_percent, bottom_percent, input_graph, plot=False):
+# Function to filter and plot nodes by centrality (closeness or betweenness)
+def filter_by_centrality(geo_df, top_percent, bottom_percent, input_graph, centrality_measure, plot=False):
     """
-    Filters a GeoDataFrame to find the top X% and bottom Y% of nodes based on closeness_centrality,
+    Filters a GeoDataFrame to find the top X% and bottom Y% of nodes based on closeness_centrality or betweenness_centrality,
     optionally plots these nodes, and returns a filtered GeoDataFrame excluding the bottom Y% nodes.
     
-    :param geo_df: GeoDataFrame with a 'closeness_centrality' column and 'x', 'y' for plotting.
-    :param top_percent: The top percentage of nodes to select based on closeness_centrality.
-    :param bottom_percent: The bottom percentage of nodes to select based on closeness_centrality.
+    :param geo_df: GeoDataFrame with columns for 'closeness_centrality' and 'betweenness_centrality' column and 'x', 'y' for plotting.
+    :param top_percent: The top percentage of nodes to select based on chosen centrality measure.
+    :param bottom_percent: The bottom percentage of nodes to select based on chosen centrality measure.
     :param plot: Whether to plot the nodes.
-    :return: A filtered GeoDataFrame excluding the bottom Y% closeness_centrality nodes.
+    :return: A filtered GeoDataFrame excluding the Y% nodes with lowest centrality score.
     """
     # Calculate the number of nodes for each selection
     num_top = int(len(geo_df) * top_percent)
     num_bottom = int(len(geo_df) * bottom_percent)
     
-    # Sort the DataFrame by closeness_centrality
-    sorted_geo_df = geo_df.sort_values(by='closeness_centrality', ascending=False)
+    # Sort the DataFrame by centrality
+    if centrality_measure == 'closeness':
+        sorted_geo_df = geo_df.sort_values(by='closeness_centrality', ascending=False)
+    elif centrality_measure == 'betweenness':
+        sorted_geo_df = geo_df.sort_values(by='betweenness_centrality', ascending=False)
+    else:
+        raise ValueError(f"Centrality measure '{centrality_measure}' not recognized. Use 'closeness' or 'betweenness'.")
     
     # Select the top X% and bottom Y%
     central_car_nodes = sorted_geo_df.head(num_top)
     remote_car_nodes = sorted_geo_df.tail(num_bottom)
 
     print(f"Input nr of car nodes: {len(geo_df)}")
-    print(f"Remaining nr of car nodes: {len(sorted_geo_df) - len(remote_car_nodes)}, after discarding the {len(remote_car_nodes)} ({bottom_percent*100:.0f}%) remote car nodes with lowest closeness centrality\n")
+    print(f"Remaining nr of car nodes: {len(sorted_geo_df) - len(remote_car_nodes)}, after discarding the {len(remote_car_nodes)} ({bottom_percent*100:.0f}%) remote car nodes with lowest {centrality_measure} centrality")
+    print("Centrality Measure:", centrality_measure)
     if plot:
         # Plot all nodes
         fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
         ax.scatter(geo_df['x'], geo_df['y'], c='white', s=50, label="Input Car nodes")
-        ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% centrality")
-        ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% centrality")
+        ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% betweenness")
+        ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% betweenness")
         ax.legend()
         plt.show()
     
