@@ -27,20 +27,19 @@ Several strategies were implemented to speed up processing and reduce the proble
 
 - Use fast python libraries written in C (pandana, igraph) for intensive tasks like computing cost matrix and network centrality measures.
 - Constrain simulated event points and potential car locations to populated areas (leveraging correlation between crime rates and population density)
-- Filter potential car points based on network centrality and proximity to other car locations.
+- Filter potential car points based on network centrality measures.
 - Using dictionary data structures for max iteration speed and PuLP processing.
 - Cost matrix reduction by filtering out the highest travel times, assuming there likely is another closer car to the given event.
 
 ### Example of problem reduction:  
-Original problem:  
-We distribute 50 potential car locations and 1000 simulated events resulting in a cost matrix of `50,000 rows`.
+Original problem:  50 potential car locations and 1000 simulated events results in a cost matrix of `50,000 rows`.
 
-With our strategy:  
-- Cut the car locations in half (=25 locations), by filtering on centrality and proximity.
+The size of the cost matrix (problem size) can be reduced by:
+- Cut the car locations in half (=25 locations), by filtering on centrality measures.
 - Cut the cost matrix (25,000) in half, by filtering out top travel times.
 - Resulting in a cost matrix of `12,500 rows` (25% the size of the original)
 
-**Conclusion**: Faster libraries, smarter problem setup, and clever problem reductions makes using MILP for optimal solutions on large road networks more attractive.
+**Conclusion**: Fast libraries and effective problem reductions make MILP a more feasible choice for large road network optimization.
 
 ---
 
@@ -49,30 +48,7 @@ With our strategy:
 ### Iterative upscaling of network size
 - [x] Initial exploration and pipeline building: Grünerløkka district in Oslo.
 - [x] Medium sized network: Oslo municipality/Oslo police district.
-- [ ] Large sized networks: (11 police districts) Eastern, SouthEastern, SouthWestern, etc
-- [ ] Max size network (if ignoring police districts): National scale (Norway).
-
-## High-level roadmap
-- [x] **Solving the static case**: The initial phase will focus on solving the static case, where the events are fixed and the police units are strategically positioned to minimize response times. This can be used to explore parameters like the number of police units, their locations, and the impact of different response time thresholds.
-- [x] **Visualizing the results**: The results will be visualized using static and interactive maps to provide intuitive insights into the effectiveness of proposed solutions. Isochrones will be used to visualize the areas that can be reached within a certain time frames (could represent legal response time thresholds).
-
-### Future directions that could be explored in different repos:
-- [ ] **Dynamic and time-dependent variables**: Incorporating dynamic and time-dependent variables to adapt to changing urban dynamics. E.g. traffic congestion, time of day, population migration, etc.
-- [ ] **Heuristic methods**: Exploring heuristic methods to solve the problem faster. Could be used for real-time decision making.
-- [ ] **Simulations and scenario analysis**: Integrating more comprehensive simulations to explore different scenarios and their impact on response times.
-
-
-## Project Development Log
-
-Below is a detailed development log highlighting the progress and methodologies employed at various stages of the project:
-
-| Notebook                         | Description |
-| -------------------------------- | ----------- |
-| `08_Grunerlokka_MCLP_v1.0.ipynb` | **Area:** Grünerløkka district (small network)<br>**Obj. func:** Maximize number of nodes covered within service distance<br>**Event points:** Generated based on population density + randomness<br>**Event weight:** Inverse distance^2 to 1 handpicked crime hotspot<br>**Possible car locations:** Handpicked 10 points<br>**Car service distance:** 800m<br>**Implementation:** OSMnx, NetworkX, spopt.MCLP function |
-| `11_Grunerlokka_PuLP_v1.1.ipynb` | **Area:** Grünerløkka district (small network)<br>**Obj. func:** Minimize total response time<br>**Event points:** Generated based on population density + randomness (same)<br>**Event weight:** Defined distance intervals from 1 handpicked crime hotspot (not used in LP problem)<br>**Possible car locations:** Handpicked 10 points -> 2 in solution<br>**Car service distance:** 800m<br>**Car max capacity:** 200 events<br>**Implementation:** OSMnx, Pandana, PuLP |
-| `12_Grunerlokka_PuLP_v1.2.ipynb` | **Area:** Grünerløkka district (small network)<br>**Obj. func:** Minimize total response time<br>**Event points:** Sample from original network nodes (fast for testing purposes)<br>**Event weight:** None<br>**Possible car locations:** Sampled 60 nodes -> Filtered to 34 -> 4 in solution<br>**Car service distance:** 800m<br>**Car max capacity:** 300 events<br>**Implementation:** OSMnx, NetworkX, Pandana, PuLP, Descartes<br>**Computation time:** Node centrality (4s), PuLP add constraints (1min 16sec) + solve (1min 14sec) |
-| `13_Oslo_PuLP_v2.0.ipynb`   | **Area:** Oslo municipality, minus Nordmarka (medium network)<br>**Obj. func:** Minimize total response time<br>**Event points:** Sample from original network nodes (610 nodes)<br>**Event weight:** None<br>**Possible car locations:** Sampled 400 nodes -> Filtered to 104 -> 4 in solution<br>**Car service distance:** 800m<br>**Car max capacity:** 300 events<br>**Implementation:** OSMnx, NetworkX, Pandana, PuLP, Descartes<br>**Computation time:** Node centrality (4min 6sec), PuLP add constraints (6min 18sec) + solve (4min 38sec) |
-
+- [ ] Large sized networks: (12 police districts) Eastern, SouthEastern, SouthWestern, etc
 
 ## Example Use Case
 
