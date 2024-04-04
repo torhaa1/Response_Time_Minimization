@@ -200,7 +200,7 @@ def plot_population_density_and_event_points(district_boundary, population_gdf, 
 #######################################################################
 
 # Function to filter and plot nodes by centrality (closeness or betweenness)
-def filter_by_centrality(geo_df, top_percent, bottom_percent, input_graph, centrality_measure, plot=False):
+def filter_by_centrality(geo_df, district_boundary, top_percent, bottom_percent, input_graph, centrality_measure, plot=False):
     """
     Filters a GeoDataFrame to find the top X% and bottom Y% of nodes based on closeness_centrality or betweenness_centrality,
     optionally plots these nodes, and returns a filtered GeoDataFrame excluding the bottom Y% nodes.
@@ -233,6 +233,7 @@ def filter_by_centrality(geo_df, top_percent, bottom_percent, input_graph, centr
     if plot:
         # Plot all nodes
         fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
+        district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
         ax.scatter(geo_df['x'], geo_df['y'], c='white', s=50, label="Input Car nodes")
         ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% betweenness")
         ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% betweenness")
@@ -245,7 +246,7 @@ def filter_by_centrality(geo_df, top_percent, bottom_percent, input_graph, centr
 
 
 # Function to filter and plot nodes by proximity to each other (minimum distance)
-def filter_nodes_by_proximity(geo_df, min_distance, input_graph, criterion_col=None, prefer='higher', plot=False):
+def filter_nodes_by_proximity(geo_df, district_boundary,  min_distance, input_graph, criterion_col=None, prefer='higher', plot=False):
     """
     Removes nodes from a GeoDataFrame that are within a specified minimum distance of each other.
     
@@ -297,6 +298,7 @@ def filter_nodes_by_proximity(geo_df, min_distance, input_graph, criterion_col=N
     if plot:
         # Plot all nodes
         fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
+        district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
         ax.scatter(geo_df.loc[to_remove, 'x'], geo_df.loc[to_remove, 'y'], c='red', s=50, label="Removed car nodes")
         ax.scatter(filtered_geo_df['x'], filtered_geo_df['y'], c='orange', s=50, label=f"Remaining car nodes")
         ax.legend(); plt.show()
@@ -528,11 +530,14 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
 #######################################################################
 
 # Method to plot final locations and assigned events
-def plot_optimal_allocations(road_network, optimal_locations_gdf, car_to_events_df, 
+def plot_optimal_allocations(road_network, district_boundary, optimal_locations_gdf, car_to_events_df, 
                         car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem):
 
     # plot the optimal police car locations and the events assigned to them
     fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=(10,10))
+
+    # plot Original District Boundary
+    district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
 
     # derived unique car locations from optimal_locations_gdf
     carNodeID_list = list(optimal_locations_gdf['carNodeID'])
