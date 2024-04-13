@@ -41,7 +41,7 @@ def simulate_event_points(population_gdf, min_range=2000, max_range=2500):
     
     # Initial lower and upper bounds for population_multiplier
     low = 0.001
-    high = 0.01
+    high = 0.1
     
     # Convergence threshold and maximum iterations to prevent infinite loops
     epsilon = 1e-6
