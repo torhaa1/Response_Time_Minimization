@@ -29,7 +29,7 @@ import folium
 #######################################################################
 
 # Function to simulate event points based on population count
-def simulate_event_points(population_gdf, pop_std_multiplier, min_range=2000, max_range=2500):
+def simulate_event_points(population_gdf, min_range=2000, max_range=2500):
     """
     Simulates the number of event points in each gridcell based on its population count.
     Use a binary search algorithm to find the optimal population multiplier to achieve a target number of points.
@@ -57,10 +57,7 @@ def simulate_event_points(population_gdf, pop_std_multiplier, min_range=2000, ma
         
         # Check if the total number of points is within the target range
         if min_target <= total_points <= max_target:
-            pop_multiplier = mid
-            correction_factor = pop_std_multiplier/pop_multiplier
-            print(f"Total number of simulated event points: {total_points}. Target range [{min_target}, {max_target}], using population multiplier: {pop_multiplier}\n", 
-                  f"Correction factor: {pop_std_multiplier}/{pop_multiplier} = {correction_factor}")
+            print(f"Total number of simulated event points: {total_points}. Target range [{min_target}, {max_target}], using population multiplier: {mid}")
             break
         elif total_points < min_target:
             low = mid
@@ -75,8 +72,7 @@ def simulate_event_points(population_gdf, pop_std_multiplier, min_range=2000, ma
     
     if iteration == max_iterations:
         print(f"Max iterations reached with multiplier: {mid} (total points: {total_points})")
-
-    return {"population_gdf": population_gdf, "population_multiplier": pop_multiplier, "correction_factor": correction_factor}
+    return population_gdf
 
 
 # Function to generate points within a grid cell
@@ -535,7 +531,7 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
 
 # Method to plot final locations and assigned events
 def plot_optimal_allocations(road_network, district_boundary, optimal_locations_gdf, car_to_events_df, 
-                        car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem, corr_factor):
+                        car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem):
 
     # plot the optimal police car locations and the events assigned to them
     fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=(10,10))
@@ -574,14 +570,12 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
     for car_id in car_to_events_df['carNodeID'].unique():
         assigned_events = car_to_events_df[car_to_events_df['carNodeID'] == car_id]
         total_events = len(assigned_events)
-        total_response_time = (assigned_events['travel_time'].sum() * corr_factor) / 60 # convert to minutes
-        avg_response_time = (assigned_events['travel_time'].mean() * corr_factor) / 60 # convert to minutes
-        median_response_time = (assigned_events['travel_time'].median() * corr_factor) / 60 # convert to minutes
+        total_response_time = assigned_events['travel_time'].sum() / 60 # convert to minutes
+        avg_response_time = assigned_events['travel_time'].mean()  / 60 # convert to minutes
         capacity_usage = (total_events / car_capacity) * 100
         
-        print(f"Car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Median: {median_response_time:.2f} min | Avg: {avg_response_time:.2f} min")
+        print(f"Police car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Avg response time: {avg_response_time:.2f} min")
 
-    print(f"Response time is multiplied by {corr_factor:.2f} to match the standard population_multiplier (median of all districts)")
     plt.show()
 
 
