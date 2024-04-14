@@ -572,9 +572,10 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
         total_events = len(assigned_events)
         total_response_time = assigned_events['travel_time'].sum() / 60 # convert to minutes
         avg_response_time = assigned_events['travel_time'].mean()  / 60 # convert to minutes
+        median_response_time = assigned_events['travel_time'].median() / 60 # convert to minutes
         capacity_usage = (total_events / car_capacity) * 100
         
-        print(f"Police car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Avg response time: {avg_response_time:.2f} min")
+        print(f"Car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Median: {median_response_time:.2f} min | Avg: {avg_response_time:.2f} min")
 
     plt.show()
 
