@@ -309,6 +309,30 @@ def filter_nodes_by_proximity(geo_df, district_boundary,  min_distance, input_gr
 # COST MATRIX
 #######################################################################
 
+# Function to add suffix to duplicate eventNodeIDs
+def suffix_duplicate_nodes(input_df):
+    """
+    Add suffixes to duplicate eventNodeIDs based on their occurrence count within each carNodeID.
+
+    Parameters:
+    - input_df (pandas.DataFrame): The input DataFrame containing the eventNodeID and carNodeID columns.
+
+    Returns:
+    - pandas.DataFrame: A new DataFrame with suffixes added to duplicate eventNodeIDs.
+    """
+    df = input_df.copy()
+    df['eventNodeID'] = df['eventNodeID'].astype(str)
+    
+    # Generate suffixes based on their occurrence count within each carNodeID
+    df['suffix'] = df.groupby(['carNodeID', 'eventNodeID']).cumcount().add(1).astype(str)
+    
+    # Add suffixes to duplicate eventNodeIDs
+    df['eventNodeID'] = df['eventNodeID'] + np.where(df['suffix'] != '0', '_' + df['suffix'], '')
+    
+    # Drop the temporary suffix column
+    df = df.drop(columns=['suffix'])
+    return df
+
 # Function to convert CostMatrix to dict + problem size reduction
 def preprocess_cost_matrix(CostMatrix, discard_threshold=0.30, verbose=True):
     """
@@ -341,7 +365,6 @@ def preprocess_cost_matrix(CostMatrix, discard_threshold=0.30, verbose=True):
         print(f"Filtering out {discard_threshold*100:.0f}% highest travel times - keeping only travel times <= {max_acceptable_travel_time:.0f} sec, or {max_acceptable_travel_time/60:.1f} min")
         print(f"Original nr of pairs: {len(CostMatrix_dict)} | Filtered nr of pairs: {len(CostMatrix_dict_reduced)}")
         print(f"Original max travel time: {np.max(list(CostMatrix_dict.values()))} | Filtered max travel time: {np.max(list(CostMatrix_dict_reduced.values()))}")
-        print(f"Original min travel time: {np.min(list(CostMatrix_dict.values()))} | Filtered min travel time: {np.min(list(CostMatrix_dict_reduced.values()))}")
 
     return CostMatrix_dict_reduced
 
@@ -367,13 +390,6 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     Returns:
     - pulp.LpProblem: The defined PuLP problem.
     """
-
-    # Start timer to time this function
-    start_time = time.time()
-
-    # Setup the problem
-    # K = 4  # Number of police car locations in final solution
-    # M = 280   # Maximum number of events a single police car can respond to
 
     # Sets
     P = CostMatrix['carNodeID'].unique()  # Potential police car locations
@@ -412,17 +428,12 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     for i in P:
         problem += pulp.lpSum([y[(i, j)] for j in E if (i, j) in CostMatrix_dict_reduced]) <= car_capacity * x[i], f"Capacity_{i}"
 
-    # end timer
-    end_time = time.time()
-
     if verbose:
         # Print statistics about the problem
         print(f"Number of decision variables: {len(problem.variables())}")
         print(f"Number of constraints: {len(problem.constraints)}")
         print(f"Number of non-zero coefficients: {len(problem.variables())}")
         print(f"Number of non-zero coefficients in the objective function: {len(problem.objective)}")
-        print(f"PuLP Problem setup took {end_time - start_time:.2f} seconds")
-
     return problem
 
 
@@ -488,7 +499,6 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
     """
     Create a Dataframe with the assigned events to each police car based on the PuLP problem solution.
     """
-
     # Initialize a dictionary to hold the assignment of events to each car
     car_to_events_assignment = {car: [] for car in optimal_locations.keys()}
 
@@ -499,11 +509,10 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
             _, car_event_pair = var.name.split("_", 1)
             carNodeID, eventNodeID = car_event_pair.strip("()").split(",_")
             carNodeID = int(carNodeID)
-            eventNodeID = int(eventNodeID)
+            # eventNodeID = int(eventNodeID)
             car_to_events_assignment[carNodeID].append(eventNodeID)
-
+    # Verify assigned events respects the max capacity constraint
     if verbose:
-        # Verify assigned events respects the max capacity constraint
         total_events = 0
         for car, events in car_to_events_assignment.items():
             print(f"Car {car} is assigned {len(events)}/{car_capacity} events")
@@ -516,13 +525,19 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
         for event in events:
             data_for_df.append({"carNodeID": car, "eventNodeID": event})
 
+    # remove eventNodeID suffixes ('_1', '_2', etc) and convert column to int64
+    for i in range(len(data_for_df)):
+        # data_for_df[i]['eventNodeID'] = int(data_for_df[i]['eventNodeID'].split('_')[0])
+        data_for_df[i]['eventNodeID'] = int(data_for_df[i]['eventNodeID'].replace("'", "").split('_')[0])
+
     # Create and merge DataFrame
     car_to_events_df = pd.DataFrame(data_for_df)
+    # car_to_events_df = pd.merge(car_to_events_df, CostMatrix_extended[['carNodeID', 'eventNodeID', 'distance', 'travel_time', 'x', 'y']], on=['carNodeID', 'eventNodeID'], how='left')
+    CostMatrix_extended = CostMatrix_extended.drop_duplicates(subset=['carNodeID', 'eventNodeID'])
     car_to_events_df = pd.merge(car_to_events_df, CostMatrix_extended[['carNodeID', 'eventNodeID', 'distance', 'travel_time', 'x', 'y']], on=['carNodeID', 'eventNodeID'], how='left')
 
     # drop duplicates and keep first occurrence
-    car_to_events_df = car_to_events_df.drop_duplicates(subset=['carNodeID', 'eventNodeID'], keep='first')
-
+    # car_to_events_df = car_to_events_df.drop_duplicates(subset=['carNodeID', 'eventNodeID'], keep='first')
     return car_to_events_df
 
 #######################################################################
@@ -543,7 +558,6 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
     carNodeID_list = list(optimal_locations_gdf['carNodeID'])
 
     # Plotting optimal police car locations
-    # use enumerate to get the carNodeID
     for i, police_car in enumerate(carNodeID_list):
         ax.scatter(optimal_locations_gdf.loc[i, 'geometry'].x, optimal_locations_gdf.loc[i, 'geometry'].y, c=f'C{i}', 
                 marker='*', edgecolor='cyan', linewidth=1.8, s=800, label=f"Police car id: {police_car}", zorder=3)
@@ -554,10 +568,9 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
         event_coords = list(zip(assigned_events['y'], assigned_events['x']))
         ax.scatter([x for _, x in event_coords], [y for y, _ in event_coords], s=75, edgecolor='black', lw=0.80, label=f'Events for car: {car_id}', zorder=2)
 
-    # Enhance legend to avoid duplicate labels
+    # legend label handling
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    # place legend outside in box on right side
     plt.legend(by_label.values(), by_label.keys(), loc='upper left', bbox_to_anchor=(1.0, 1))
 
     print("Input parameters:")
