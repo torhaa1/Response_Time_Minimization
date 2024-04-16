@@ -1,27 +1,17 @@
 # Utility module to hold functions that are used in the main analysis scripts
 
-"""
-Module to keep most frequently used functions/methods
-"""
-# import packages
-import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
 
-import shapely
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping
 from shapely.ops import nearest_points, unary_union
 from descartes import PolygonPatch
-import pyproj
 import geopandas as gpd
 import osmnx as ox
 import networkx as nx
-import pandana as pdna
 import pulp
-import highspy
 from scipy.stats import gaussian_kde
 import folium
 
@@ -85,7 +75,6 @@ def generate_points_within_gridcell(num_points, bounds):
     xs = np.random.uniform(min_x, max_x, num_points)
     ys = np.random.uniform(min_y, max_y, num_points)
     points = [Point(x, y) for x, y in zip(xs, ys)]
-    
     return points
 
 
@@ -164,9 +153,9 @@ def generate_high_density_polygon(event_points_gdf, grid_size=100, density_thres
         plt.show()
     return final_polygon_gdf
 
+
 # Method to plot the population density, simulated event points, and high population density areas side-by-side
 def plot_population_density_and_event_points(district_boundary, population_gdf, event_points_gdf, high_pop_density_area, edges):
-
     # Adjusted figure size and added gridspec_kw for spacing
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 10), gridspec_kw={'wspace': 0.5})
     vmin, vmax = 0, 200
@@ -193,8 +182,8 @@ def plot_population_density_and_event_points(district_boundary, population_gdf, 
     ax3.get_xaxis().set_visible(False)
     ax3.get_yaxis().set_visible(False)
     ax3.set_title('High population density areas', pad=20)
-    # plt.tight_layout()
     plt.show()
+
 
 #######################################################################
 # CAR POINTS
@@ -236,9 +225,9 @@ def filter_by_centrality(geo_df, district_boundary, top_percent, bottom_percent,
         fig, ax = ox.plot_graph(input_graph, node_color="white", node_size=0, edge_linewidth=0.2, edge_color="w", show=False, close=False)
         district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
         ax.scatter(geo_df['x'], geo_df['y'], c='white', s=50, label="Input Car nodes")
-        ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% betweenness")
-        ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% betweenness")
-        ax.legend()
+        ax.scatter(central_car_nodes['x'], central_car_nodes['y'], c='orange', s=50, label=f"Highest {top_percent*100:.0f}% {centrality_measure} centrality")
+        ax.scatter(remote_car_nodes['x'], remote_car_nodes['y'], c='red', s=50, label=f"Lowest {bottom_percent*100:.0f}% {centrality_measure} centrality")
+        plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=11)
         plt.show()
     
     # Remove the bottom Y% nodes from the original GeoDataFrame
@@ -302,7 +291,8 @@ def filter_nodes_by_proximity(geo_df, district_boundary,  min_distance, input_gr
         district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
         ax.scatter(geo_df.loc[to_remove, 'x'], geo_df.loc[to_remove, 'y'], c='red', s=50, label="Removed car nodes")
         ax.scatter(filtered_geo_df['x'], filtered_geo_df['y'], c='orange', s=50, label=f"Remaining car nodes")
-        ax.legend(); plt.show()
+        plt.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=11)
+        plt.show()
     return filtered_geo_df
 
 
@@ -333,6 +323,7 @@ def suffix_duplicate_nodes(input_df):
     # Drop the temporary suffix column
     df = df.drop(columns=['suffix'])
     return df
+
 
 # Function to convert CostMatrix to dict + problem size reduction
 def preprocess_cost_matrix(CostMatrix, discard_threshold=0.30, verbose=True):
@@ -366,9 +357,7 @@ def preprocess_cost_matrix(CostMatrix, discard_threshold=0.30, verbose=True):
         print(f"Filtering out {discard_threshold*100:.0f}% highest travel times - keeping only travel times <= {max_acceptable_travel_time:.0f} sec, or {max_acceptable_travel_time/60:.1f} min")
         print(f"Original nr of pairs: {len(CostMatrix_dict)} | Filtered nr of pairs: {len(CostMatrix_dict_reduced)}")
         print(f"Original max travel time: {np.max(list(CostMatrix_dict.values()))} | Filtered max travel time: {np.max(list(CostMatrix_dict_reduced.values()))}")
-
     return CostMatrix_dict_reduced
-
 
 
 #######################################################################
@@ -391,7 +380,6 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     Returns:
     - pulp.LpProblem: The defined PuLP problem.
     """
-
     # Sets
     P = CostMatrix['carNodeID'].unique()  # Potential police car locations
     E = CostMatrix['eventNodeID'].unique()  # Events
@@ -438,7 +426,7 @@ def define_pulp_problem(CostMatrix, CostMatrix_dict_reduced, nr_of_cars=4, car_c
     return problem
 
 
-# Function to run solvers - first fast LP relaxation, then MILP
+# Function to run solvers - first fast LP relaxation, then MILP configuration
 def run_solvers(problem, P, nr_of_locations, solver_name='PULP_CBC_CMD', forceMIP=False, plot=False):
     """
     Run the PULP solver with different configurations to find the optimal solution.
@@ -541,16 +529,17 @@ def create_car_to_events_df(CostMatrix_extended, optimal_locations, problem, car
     # car_to_events_df = car_to_events_df.drop_duplicates(subset=['carNodeID', 'eventNodeID'], keep='first')
     return car_to_events_df
 
+
 #######################################################################
-# VISUALIZATION
+# VISUALIZATION - OPTIMAL LOCATIONS AND EVENT ASSIGNMENTS
 #######################################################################
 
 # Method to plot final locations and assigned events
 def plot_optimal_allocations(road_network, district_boundary, optimal_locations_gdf, car_to_events_df, 
-                        car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem):
+                car_nodes_gdf_filtered, nr_of_unique_events, nr_of_cars, car_capacity, problem, figsize=(10,10)):
 
     # plot the optimal police car locations and the events assigned to them
-    fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=(10,10))
+    fig, ax = ox.plot_graph(road_network, node_color="white", node_size=0, bgcolor='k', edge_linewidth=0.2, edge_color="w", show=False, close=False, figsize=figsize)
 
     # plot Original District Boundary
     district_boundary.boundary.plot(ax=ax, color='green', linewidth=2.5, alpha=0.7)
@@ -590,7 +579,6 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
         capacity_usage = (total_events / car_capacity) * 100
         
         print(f"Car id: {car_id} handles {total_events} events | Capacity: {capacity_usage:.2f}% | Total response time: {total_response_time:.2f} min | Median: {median_response_time:.2f} min | Avg: {avg_response_time:.2f} min")
-
     plt.show()
 
 
@@ -699,7 +687,6 @@ def plot_leaflet_map(road_network, trip_times, merged_isochrones, background_pol
             background_polygon_gdf.geometry,
             style_function=lambda x: {'color': 'black', 'weight': 0.5, 'fillOpacity': 0.1, 'lineOpacity': 0.7}
         ).add_to(leaflet_map)
-
     return leaflet_map
 
 
@@ -728,6 +715,7 @@ def compute_district_stats(car_to_events_df):
     # Collect in dataframe in order: min, median, mean, max, std, var, sum, count, percentils
     district_stats = pd.DataFrame({"min": min, "median": median, "mean": mean, "max": max, "std": std, "sum": sum, "count": count, "percentile_20": percentiles[0.20], "percentile_50": percentiles[0.5], "percentile_80": percentiles[0.80]}, index=[0])
     return district_stats
+
 
 # Function to compute within-district travel time statistics (individual cars)
 def compute_within_district_stats(car_to_events_df, car_capacity):
@@ -827,6 +815,7 @@ def plot_travel_time_box_violin_district(car_to_events_df, district_stats, figsi
     ax2.grid()
     plt.tight_layout(); plt.show()
 
+
 #######################################################################
 # STATISTICS 3 - PLOTS WITHIN DISTRICT
 #######################################################################
@@ -846,6 +835,7 @@ def plot_travel_time_boxplot_cars(car_to_events_df, figsize=(8, 4)):
     plt.xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1), car_to_events_df['carNodeID'].unique())
     plt.grid(); plt.show()
 
+
 # Function to plot the violin plot of travel times for each car
 def plot_travel_time_violinplot_cars(car_to_events_df, figsize=(8, 4)):
     """Plot violin plot of travel times for each car"""
@@ -859,6 +849,7 @@ def plot_travel_time_violinplot_cars(car_to_events_df, figsize=(8, 4)):
     plt.ylabel('Travel time [min]')
     plt.xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1), car_to_events_df['carNodeID'].unique())
     plt.grid(); plt.show()
+
 
 # Function to plot boxplot and violin plot side by side
 def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
@@ -887,5 +878,3 @@ def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
     ax2.set_xticklabels(car_to_events_df['carNodeID'].unique())
     ax2.grid()
     plt.tight_layout(); plt.show()
-
-#######################################################################
