@@ -583,15 +583,18 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
 
 
 # Create isochrone polygons
-def make_iso_polys(G, trip_times, center_nodes, edge_buff=30, node_buff=0, infill=True):
+def make_iso_polys(G, trip_times, trip_time_corr, center_nodes, edge_buff=30, node_buff=0, infill=True):
     """
     Generate isochrone polygons for given center nodes in a graph.
     """
+    # Correction factor since police cars drive faster and have longer reach
+    trip_time_correction = 1 + (1-trip_time_corr)  # e.g. 1+(1-0.75)=1.25. Reaches 25% further
+
     all_isochrone_polys = []
     for center_node in center_nodes:
         isochrone_polys = []
         for trip_time in sorted(trip_times, reverse=True):
-            subgraph = nx.ego_graph(G, center_node, radius=trip_time*60, distance='travel_time')
+            subgraph = nx.ego_graph(G, center_node, radius=(trip_time*60)*trip_time_correction, distance='travel_time')
             if subgraph.number_of_nodes() == 0 or subgraph.number_of_edges() == 0:
                 # Skip if subgraph is empty
                 continue
