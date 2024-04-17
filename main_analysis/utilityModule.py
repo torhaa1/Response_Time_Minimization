@@ -15,6 +15,30 @@ import pulp
 from scipy.stats import gaussian_kde
 import folium
 
+
+#######################################################################
+# PREPROCESSING
+#######################################################################
+
+# Function to increase edge speed and recompute travel time
+def increase_edge_speeds(graph_gdf_edges):
+    """
+    Increase the speed of edges in the graph GeoDataFrame and recompute the travel time.
+    Assume police cars can drive 20-40% faster than speed limits.
+    Based on 3rd degree polynomial function described in issue #8.
+    """
+    # Use precomputed polynomial coefficients
+    precomputed_coefficients = [-2.32614692e-05, 6.92679011e-03, 8.36197811e-01, 5.20808653e+00]
+    polynomial = np.poly1d(precomputed_coefficients)
+    
+    # Apply the polynomial to adjust the speeds
+    graph_gdf_edges['speed_kph'] = polynomial(graph_gdf_edges['speed_kph'])
+    
+    # Calculate new travel time in seconds: length (m) / (speed (km/h) / 3.6 (km/h to m/s))
+    graph_gdf_edges['travel_time'] = (graph_gdf_edges['length'] / (graph_gdf_edges['speed_kph'] / 3.6))
+    return graph_gdf_edges
+
+
 #######################################################################
 # EVENT POINTS
 #######################################################################
@@ -583,18 +607,15 @@ def plot_optimal_allocations(road_network, district_boundary, optimal_locations_
 
 
 # Create isochrone polygons
-def make_iso_polys(G, trip_times, trip_time_corr, center_nodes, edge_buff=30, node_buff=0, infill=True):
+def make_iso_polys(G, trip_times, center_nodes, edge_buff=30, node_buff=0, infill=True):
     """
     Generate isochrone polygons for given center nodes in a graph.
     """
-    # Correction factor since police cars drive faster and have longer reach
-    trip_time_correction = 1 + (1-trip_time_corr)  # e.g. 1+(1-0.75)=1.25. Reaches 25% further
-
     all_isochrone_polys = []
     for center_node in center_nodes:
         isochrone_polys = []
         for trip_time in sorted(trip_times, reverse=True):
-            subgraph = nx.ego_graph(G, center_node, radius=(trip_time*60)*trip_time_correction, distance='travel_time')
+            subgraph = nx.ego_graph(G, center_node, radius=trip_time*60, distance='travel_time')
             if subgraph.number_of_nodes() == 0 or subgraph.number_of_edges() == 0:
                 # Skip if subgraph is empty
                 continue
