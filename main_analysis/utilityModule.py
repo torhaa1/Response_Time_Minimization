@@ -27,16 +27,17 @@ def increase_edge_speeds(graph_gdf_edges):
     Assume police cars can drive 20-40% faster than speed limits.
     Based on 3rd degree polynomial function described in issue #8.
     """
+    edges = graph_gdf_edges.copy()
     # Use precomputed polynomial coefficients
     precomputed_coefficients = [-2.32614692e-05, 6.92679011e-03, 8.36197811e-01, 5.20808653e+00]
     polynomial = np.poly1d(precomputed_coefficients)
     
     # Apply the polynomial to adjust the speeds
-    graph_gdf_edges['speed_kph'] = polynomial(graph_gdf_edges['speed_kph'])
+    edges['speed_kph'] = polynomial(edges['speed_kph'])
     
     # Calculate new travel time in seconds: length (m) / (speed (km/h) / 3.6 (km/h to m/s))
-    graph_gdf_edges['travel_time'] = (graph_gdf_edges['length'] / (graph_gdf_edges['speed_kph'] / 3.6))
-    return graph_gdf_edges
+    edges['travel_time'] = (edges['length'] / (edges['speed_kph'] / 3.6))
+    return edges
 
 
 #######################################################################
@@ -645,7 +646,7 @@ def make_iso_polys(G, trip_times, center_nodes, edge_buff=30, node_buff=0, infil
     
 
 # Merge isochrones to prevent overlap
-def merge_isochrones(G, isochrone_polys):
+def merge_isochrones(isochrone_polys):
     """
     Merge isochrones to prevent overlap.
     """
