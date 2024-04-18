@@ -180,10 +180,10 @@ def generate_high_density_polygon(event_points_gdf, grid_size=100, density_thres
 
 
 # Method to plot the population density, simulated event points, and high population density areas side-by-side
-def plot_population_density_and_event_points(district_boundary, population_gdf, event_points_gdf, high_pop_density_area, edges, figsize=(10, 10)):
+def plot_population_density_and_event_points(district_boundary, population_gdf, event_points_gdf, high_pop_density_area, edges, figsize=(10, 10), set_vmax=200):
     # Adjusted figure size and added gridspec_kw for spacing
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=figsize, gridspec_kw={'wspace': 0.5})
-    vmin, vmax = 0, 200
+    vmin, vmax = 0, set_vmax
 
     # Population Density
     district_boundary.boundary.plot(ax=ax1, color='black', linewidth=0.5, alpha=0.7)
