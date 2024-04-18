@@ -735,10 +735,10 @@ def compute_district_stats(car_to_events_df):
     # var = car_to_events_df["travel_time"].var() / 60 # convert to minutes
     sum = car_to_events_df["travel_time"].sum() / 60 # convert to minutes
     count = car_to_events_df["travel_time"].count()
-    percentiles = car_to_events_df["travel_time"].quantile([0.20, 0.5, 0.80])  / 60 # convert to minutes
+    percentiles = car_to_events_df["travel_time"].quantile([0.20, 0.80])  / 60 # convert to minutes
 
     # Collect in dataframe in order: min, median, mean, max, std, var, sum, count, percentils
-    district_stats = pd.DataFrame({"min": min, "median": median, "mean": mean, "max": max, "std": std, "sum": sum, "count": count, "percentile_20": percentiles[0.20], "percentile_50": percentiles[0.5], "percentile_80": percentiles[0.80]}, index=[0])
+    district_stats = pd.DataFrame({"min": min, "median": median, "mean": mean, "max": max, "std": std, "sum": sum, "count": count, "percentile_20": percentiles[0.20], "percentile_80": percentiles[0.80]}, index=[0])
     return district_stats
 
 
@@ -762,53 +762,104 @@ def compute_within_district_stats(car_to_events_df, car_capacity):
         sum = car_df["travel_time"].sum() / 60 # convert to minutes
         count = car_df["travel_time"].count()
         capacity = (count / car_capacity) * 100
-        percentiles = car_df["travel_time"].quantile([0.20, 0.5, 0.80])  / 60 # convert to minutes
-        car_stats = pd.DataFrame({"min": min, "median": median, "mean": mean, "max": max, "std": std, "sum": sum, "count": count, f"capacity_{car_capacity}": capacity, "percentile_20": percentiles[0.20], "percentile_50": percentiles[0.5], "percentile_80": percentiles[0.80]}, index=[0])
+        percentiles = car_df["travel_time"].quantile([0.20, 0.80])  / 60 # convert to minutes
+        car_stats = pd.DataFrame({"min": min, "median": median, "mean": mean, "max": max, "std": std, "sum": sum, "count": count, f"capacity_{car_capacity}": capacity, "percentile_20": percentiles[0.20], "percentile_80": percentiles[0.80]}, index=[0])
         car_stats['carNodeID'] = car
         car_stats_list.append(car_stats)
 
     # concatenate the list of dataframes to a single dataframe
     car_stats_df = pd.concat(car_stats_list)
-    car_stats_df = car_stats_df[['carNodeID', 'min', 'median', 'mean', 'max', 'std', 'sum', 'count', f"capacity_{car_capacity}", 'percentile_20', 'percentile_50', 'percentile_80']]
+    car_stats_df = car_stats_df[['carNodeID', 'min', 'median', 'mean', 'max', 'std', 'sum', 'count', f"capacity_{car_capacity}", 'percentile_20', 'percentile_80']]
     return car_stats_df
+
+
+# Function to remove outliers from the dataframe based on z-scores
+def remove_outliers_from_df(df, column,  z_score_threshold=12, verbose=False):
+    """
+    Remove outliers from specified column in the input dataframe based on z-scores.
+    
+    Parameters:
+    df (pd.DataFrame): A dataframe with car to events assignments.
+    column (str): The column to remove outliers from.
+    z_score_threshold (int): The threshold for z-scores to remove outliers.
+    
+    Returns:
+    pd.DataFrame: A dataframe without outliers.
+    """
+    # Calculate the z-scores for each row in column 'travel_time'
+    z_scores = np.abs((df[column] - df[column].mean()) / df[column].std())
+
+    if verbose:
+        # print out if find outlier
+        if (z_scores > z_score_threshold).any():
+            print(f"> Outliers found and removed with z-scores: {z_scores[z_scores > z_score_threshold]}") 
+            print(df[z_scores > z_score_threshold])
+        # else:
+            # print(f"No outliers found")
+
+    # Remove rows with z-scores above the threshold
+    df = df[z_scores <= z_score_threshold]
+    return df
 
 
 #######################################################################
 # STATISTICS 2 - PLOTS DISTRICT-WIDE
 #######################################################################
 
-# Function to plot the histogram of travel times (district-wide)
+def plot_horizontal_barplot_all_districts(district_stats_summary, figsize=(10, 5)):
+    # visualize as a barplot with response time on x axis and district on y axis
+    fig, ax = plt.subplots(figsize=figsize)
+    # plot the 80th percentile response time for each district
+    ax.barh(district_stats_summary.index.get_level_values(0), district_stats_summary['percentile_80'], color='red', label='80th percentile')
+    # plot the mean response time for each district
+    ax.barh(district_stats_summary.index.get_level_values(0), district_stats_summary['mean'], color='skyblue', label='Mean')
+    # plot the median response time for each district
+    ax.barh(district_stats_summary.index.get_level_values(0), district_stats_summary['median'], color='orange', label='Median')
+    # plot the 20th percentile response time for each district
+    # ax.barh(district_stats_summary.index.get_level_values(0), district_stats_summary['percentile_20'], color='green', label='20th percentile')
+    ax.legend()
+    # add labels and title
+    ax.set_ylabel('District')
+    ax.set_xlabel('Response time [min]')
+    ax.set_title('Response time statistics for each district')
+
+    plt.xticks(np.arange(0, 100, 5))
+    ax.set_facecolor('whitesmoke')
+    plt.grid(which='both', linewidth=0.5)
+    plt.show()
+
+# Function to plot the histogram of response times (district-wide)
 def plot_travel_time_histogram_district(car_to_events_df, district_stats, figsize=(8, 4)):
-    """Plot histogram of travel times for all cars"""
+    """Plot histogram of response times for all cars"""
     fig, ax = plt.subplots(figsize=figsize)
     plt.hist(car_to_events_df['travel_time'] / 60, bins=50, edgecolor='black')
-    plt.axvline(x=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.5, label='Mean travel time')
-    plt.axvline(x=district_stats['median'].values[0], color='y', linestyle='--', lw=2.5, label='Median travel time')
+    plt.axvline(x=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.5, label='Mean response time')
+    plt.axvline(x=district_stats['median'].values[0], color='y', linestyle='--', lw=2.5, label='Median response time')
     plt.axvline(x=district_stats['percentile_80'].values[0], color='black', linestyle='--', lw=2.5, label='80th percentile')
     plt.axvline(x=district_stats['percentile_20'].values[0], color='black', linestyle='--', lw=2.5, label='20th percentile')
 
-    plt.title('Histogram of travel times for all cars')
-    plt.xlabel('Travel time [min]')
+    plt.title('Histogram of response times for all cars')
+    plt.xlabel('Response time [min]')
     plt.ylabel('Frequency')
     plt.legend(loc='upper right')
     plt.grid(); plt.show()
 
-# Function to plot the scatterplot of travel times (district-wide)
+# Function to plot the scatterplot of response times (district-wide)
 def plot_travel_time_scatterplot_district(car_to_events_df, district_stats, figsize=(8, 4)):
-    """Plot scatterplot of travel times for all cars"""
+    """Plot scatterplot of response times for all cars"""
     fig, ax = plt.subplots(figsize=figsize)
     for car in car_to_events_df['carNodeID'].unique():
         car_df = car_to_events_df[car_to_events_df['carNodeID'] == car]
         plt.scatter(car_df.index, car_df['travel_time'] / 60, edgecolor='black', alpha=0.4, label=f"Car {car}", s=20)
 
     plt.axhline(y=district_stats['percentile_80'].values[0], color='black', linestyle='--', lw=2.5, label='80th percentile')
-    plt.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.5, label='Mean travel time')
-    # plt.axhline(y=district_stats['median'].values[0], color='y', linestyle='--', lw=2.5, label='Median travel time')
+    plt.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.5, label='Mean response time')
+    # plt.axhline(y=district_stats['median'].values[0], color='y', linestyle='--', lw=2.5, label='Median response time')
     plt.axhline(y=district_stats['percentile_20'].values[0], color='black', linestyle='--', lw=2.5, label='20th percentile')
 
-    plt.title('Scatter plot of travel times for all cars')
+    plt.title('Scatter plot of response times for all cars')
     plt.xlabel('Event ID')
-    plt.ylabel('Travel time [min]')
+    plt.ylabel('response time [min]')
     plt.legend(title='Car Node ID', loc='upper left', bbox_to_anchor=(1, 1))
     plt.grid(); plt.show()
 
@@ -820,23 +871,84 @@ def plot_travel_time_box_violin_district(car_to_events_df, district_stats, figsi
     box = ax1.boxplot(car_to_events_df['travel_time']/60, patch_artist=True, widths=0.75)
     for patch in box['boxes']:
         patch.set_facecolor('lightblue')
-    ax1.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.0, alpha=0.5, label='Mean travel time')
+    ax1.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.0, alpha=0.5, label='Mean response time')
     ax1.axhline(y=district_stats['percentile_80'].values[0], color='black', linestyle='--', lw=2.0, alpha=0.5, label='80th percentile')
     ax1.axhline(y=district_stats['percentile_20'].values[0], color='black', linestyle='--', lw=2.0, alpha=0.5, label='20th percentile')
-    ax1.set_title('Travel time box plot')
+    ax1.set_title('Response time box plot')
     ax1.set_xlabel('District events')
-    ax1.set_ylabel('Travel time [min]')
+    ax1.set_ylabel('Response time [min]')
     ax1.grid()
     # violin plot
     violin = ax2.violinplot(car_to_events_df['travel_time']/60, widths=0.75, showmedians=True)
     for patch in violin['bodies']:
         patch.set_facecolor('deepskyblue')
-    ax2.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.0, alpha=0.5, label='Mean travel time')
+    ax2.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.0, alpha=0.5, label='Mean response time')
     ax2.axhline(y=district_stats['percentile_80'].values[0], color='black', linestyle='--', lw=2.0, alpha=0.5, label='80th percentile')
     ax2.axhline(y=district_stats['percentile_20'].values[0], color='black', linestyle='--', lw=2.0, alpha=0.5, label='20th percentile')
-    ax2.set_title('Travel time violin plot')
+    ax2.set_title('Response time violin plot')
     ax2.set_xlabel('District events')
-    # ax2.set_ylabel('Travel time [min]')
+    # ax2.set_ylabel('response time [min]')
+    ax2.grid()
+    plt.tight_layout(); plt.show()
+
+# Function to plot the response time distribution (district-wide) for all districts
+def plot_travel_time_boxplot_all_districts(car_to_events_dict, figsize=(8, 4)):
+    """Plot boxplot of response times for each car for all districts"""
+    fig, ax = plt.subplots(figsize=figsize)
+    box = plt.boxplot([df['travel_time']/60 for df in car_to_events_dict.values()], patch_artist=True, widths=0.75)
+    colors = plt.cm.Pastel1.colors
+    for i, patch in enumerate(box['boxes']):
+        patch.set_facecolor(colors[i % len(colors)])
+    plt.title('Boxplot of response times for each car for all districts')
+    plt.suptitle('')
+    plt.xlabel('District')
+    plt.ylabel('Response time [min]')
+    plt.xticks(range(1, len(car_to_events_dict)+1), car_to_events_dict.keys(), rotation=45)
+    plt.yticks(np.arange(min([df['travel_time'].min()/60 for df in car_to_events_dict.values()]), max([df['travel_time'].max()/60 for df in car_to_events_dict.values()]), 20))  # Adjust grid granularity
+    plt.grid(which='both', linewidth=0.5)
+    plt.show()
+
+# Function to plot the response time distribution (district-wide) for all districts
+def plot_travel_time_violinplot_all_districts(car_to_events_dict, figsize=(8, 4)):
+    """Plot violin plot of response times for each car for all districts"""
+    fig, ax = plt.subplots(figsize=figsize)
+    violin = plt.violinplot([df['travel_time']/60 for df in car_to_events_dict.values()], widths=0.75, showmedians=True)
+    colors = list(mcolors.TABLEAU_COLORS.values())
+    for i, patch in enumerate(violin['bodies']):
+        patch.set_facecolor(colors[i % len(colors)])
+    plt.title('Violin plot of response times for each car for all districts')
+    plt.xlabel('District')
+    plt.ylabel('Response time [min]')
+    plt.xticks(range(1, len(car_to_events_dict)+1), car_to_events_dict.keys(), rotation=45)
+    plt.yticks(np.arange(min([df['travel_time'].min()/60 for df in car_to_events_dict.values()]), max([df['travel_time'].max()/60 for df in car_to_events_dict.values()]), 20))  # Adjust grid granularity
+    plt.grid(which='both', linewidth=0.5)
+    plt.show()
+
+# Function to plot both boxplot and violin plot side by side (district-wide) for all districts
+def plot_travel_time_box_violin_all_districts(car_to_events_dict, figsize=(8, 5)):
+    """Plot both boxplot and violin plot side by side for all districts"""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, sharey=True)
+    # boxplot
+    box = ax1.boxplot([df['travel_time']/60 for df in car_to_events_dict.values()], patch_artist=True, widths=0.75)
+    colors = plt.cm.Pastel1.colors
+    for i, patch in enumerate(box['boxes']):
+        patch.set_facecolor(colors[i % len(colors)])
+    ax1.set_title('Boxplot of response times for each car for all districts')
+    ax1.set_xlabel('District')
+    ax1.set_ylabel('Response time [min]')
+    ax1.set_xticks(range(1, len(car_to_events_dict)+1))
+    ax1.set_xticklabels(car_to_events_dict.keys(), rotation=45)
+    ax1.grid()
+    # violin plot
+    violin = ax2.violinplot([df['travel_time']/60 for df in car_to_events_dict.values()], widths=0.75, showmedians=True)
+    colors = list(mcolors.TABLEAU_COLORS.values())
+    for i, patch in enumerate(violin['bodies']):
+        patch.set_facecolor(colors[i % len(colors)])
+    ax2.set_title('Violin plot of response times for each car for all districts')
+    ax2.set_xlabel('District')
+    ax2.set_ylabel('Response time [min]')
+    ax2.set_xticks(range(1, len(car_to_events_dict)+1))
+    ax2.set_xticklabels(car_to_events_dict.keys(), rotation=45)
     ax2.grid()
     plt.tight_layout(); plt.show()
 
@@ -845,33 +957,33 @@ def plot_travel_time_box_violin_district(car_to_events_df, district_stats, figsi
 # STATISTICS 3 - PLOTS WITHIN DISTRICT
 #######################################################################
 
-# Function to plot the boxplot of travel times for each car (within district)
+# Function to plot the boxplot of response times for each car (within district)
 def plot_travel_time_boxplot_cars(car_to_events_df, figsize=(8, 4)):
-    """Plot boxplot of travel times for each car"""
+    """Plot boxplot of response times for each car"""
     fig, ax = plt.subplots(figsize=figsize)
     box = plt.boxplot([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time']/60 for id in car_to_events_df['carNodeID'].unique()], patch_artist=True, widths=0.75)
     colors = plt.cm.Pastel1.colors
     for i, patch in enumerate(box['boxes']):
         patch.set_facecolor(colors[i % len(colors)])
-    plt.title('Boxplot of travel times for each car')
+    plt.title('Boxplot of response times for each car')
     plt.suptitle('')
     plt.xlabel('Car Node ID')
-    plt.ylabel('Travel time [min]')
+    plt.ylabel('Response time [min]')
     plt.xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1), car_to_events_df['carNodeID'].unique())
     plt.grid(); plt.show()
 
 
-# Function to plot the violin plot of travel times for each car
+# Function to plot the violin plot of response times for each car
 def plot_travel_time_violinplot_cars(car_to_events_df, figsize=(8, 4)):
-    """Plot violin plot of travel times for each car"""
+    """Plot violin plot of response times for each car"""
     fig, ax = plt.subplots(figsize=figsize)
     violin = plt.violinplot([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time']/60 for id in car_to_events_df['carNodeID'].unique()], widths=0.75, showmedians=True)
     colors = list(mcolors.TABLEAU_COLORS.values())
     for i, patch in enumerate(violin['bodies']):
         patch.set_facecolor(colors[i % len(colors)])
-    plt.title('Violin plot of travel times for each car')
+    plt.title('Violin plot of response times for each car')
     plt.xlabel('Car Node ID')
-    plt.ylabel('Travel time [min]')
+    plt.ylabel('Response time [min]')
     plt.xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1), car_to_events_df['carNodeID'].unique())
     plt.grid(); plt.show()
 
@@ -885,9 +997,9 @@ def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
     colors = plt.cm.Pastel1.colors
     for i, patch in enumerate(box['boxes']):
         patch.set_facecolor(colors[i % len(colors)])
-    ax1.set_title('Boxplot of travel times for each car')
+    ax1.set_title('Boxplot of response times for each car')
     ax1.set_xlabel('Car Node ID')
-    ax1.set_ylabel('Travel time [min]')
+    ax1.set_ylabel('Response time [min]')
     ax1.set_xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1))
     ax1.set_xticklabels(car_to_events_df['carNodeID'].unique())
     ax1.grid()
@@ -896,9 +1008,9 @@ def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
     colors = list(mcolors.TABLEAU_COLORS.values())
     for i, patch in enumerate(violin['bodies']):
         patch.set_facecolor(colors[i % len(colors)])
-    ax2.set_title('Violin plot of travel times for each car')
+    ax2.set_title('Violin plot of response times for each car')
     ax2.set_xlabel('Car Node ID')
-    ax2.set_ylabel('Travel time [min]')
+    ax2.set_ylabel('Response time [min]')
     ax2.set_xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1))
     ax2.set_xticklabels(car_to_events_df['carNodeID'].unique())
     ax2.grid()
