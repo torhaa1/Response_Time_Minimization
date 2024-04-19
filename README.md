@@ -63,11 +63,11 @@ The size of the cost matrix (problem size) is reduced by:
 ## Example 1: Optimize locations for 4 Police Units in Oslo City
 #### Based on a sample of possible police car locations and a set of simulated events,  find the optimal locations for 4 police units to minimize the total response time to all events, while respecting each car's maximum workload.
 
-<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_4locations_optimal.png" width="700">
+<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_city_4cars_plot_locations.png" width="700">
 Figure 1 shows the solution with optimal placement of 4 units and their assigned events.   
 
 
-<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_4locations_isochrones.png" width="700">
+<img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_city_4cars_plot_isochrones.png" width="700">
 Figure 2 plot the isochrones, showing the cars collective reach from the optimal car locations within 2, 4 and 8 minutes.
 
 
