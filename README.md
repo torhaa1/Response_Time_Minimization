@@ -25,7 +25,7 @@ Based on the analysis results, we generate the following visualizations:
 - **Within-District Statistics:** These statistics shows the response time and workload for each car, providing valuable insights for strategically positioning units more effectively.
 
 #### Model Assumptions on Response Time
-This model calculates the best possible scenario for response times by using the speed limit for each road segment as the base speed. Police vehicles are assumed to drive 20-36% faster than this speed limit. E.g., speeds are increased by 22% for roads with a 20 kph limit and by 36% for roads with a 110 kph limit.
+This model calculates the best possible scenario for response times by using the speed limit for each road segment as the base speed. Police vehicles are assumed to drive 20-36% faster than this speed limit. E.g., speeds are increased by 22% for roads with a 20 kph limit and by 36% for roads with a 110 kph limit (more details in [issue #8](https://github.com/torhaa1/Response_Time_Minimization/issues/8)).
 It is important to note that the model does not account for potential decreases in travel speed due to external factors such as poor weather conditions, seasonal variations, or heavy traffic. Excluding these elements means that the model presents an idealized scenario, focusing on the theoretical minimum response time under optimal conditions. Additionally, the model does not allow the use of ferries to reduce drive time.
 
 
