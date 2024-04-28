@@ -40,6 +40,55 @@ def increase_edge_speeds(graph_gdf_edges):
     return edges
 
 
+# Function to find connected components in disconnected graph
+def find_connected_components(graph, verbose, plot):
+    """
+    Function to find connected components in a graph and project each component to local UTM.
+    Parameters:
+        - graph: networkx graph
+        - verbose: boolean
+    Returns:
+        - connected_components: list of networkx graphs
+    """
+    # convert to undirected graph before finding connected components
+    graph = graph.to_undirected()
+
+    # Identify the connected components in the graph
+    # This returns a list of sets, where each set contains the node identifiers of a connected component
+    connected_components = list(nx.connected_components(graph))
+    print(f"Number of connected components: {len(connected_components)}")
+
+    # project each subgraph to local UTM for accurate distance measurements, area calculations, etc.
+    for i, component in enumerate(connected_components):
+        connected_components[i] = ox.projection.project_graph(graph.subgraph(component))
+        if verbose:
+            print(f"Number of nodes in component {i}: {connected_components[i].number_of_nodes()}")
+
+    print(f"Total number of nodes in all components: {sum([g.number_of_nodes() for g in connected_components])}")
+
+    if plot:
+        colors = ["r", "g", "b", "o"]
+        fig, ax = plt.subplots(figsize=(5, 5))
+        for i, component in enumerate(connected_components):
+            # convert graph component to nodes and edges geodataframes
+            nodes_component, edges_component = ox.graph_to_gdfs(graph.subgraph(component), nodes=True, edges=True)
+
+            # set crs equal to the graph crs
+            nodes_component.crs = graph.graph['crs']
+            edges_component.crs = graph.graph['crs']
+            
+            # plot the component
+            ax = nodes_component.plot(ax=ax, color=colors[i], markersize=1, zorder=2, label=f"Component {i}")
+            ax = edges_component.plot(ax=ax, color=colors[i], linewidth=1, alpha=0.4, zorder=1)
+        ax.set_title("Connected components in the graph")
+        ax.legend(markerscale=4, fontsize=11, loc='upper left', bbox_to_anchor=(1, 1))
+        plt.tight_layout()
+        plt.show()
+    return connected_components
+
+    return connected_components
+
+
 #######################################################################
 # EVENT POINTS
 #######################################################################
@@ -305,7 +354,7 @@ def filter_nodes_by_proximity(geo_df, district_boundary,  min_distance, input_gr
     filtered_geo_df = geo_df.drop(index=to_remove)
     
     # Reset index to clean up the DataFrame
-    filtered_geo_df.reset_index(drop=True, inplace=True)
+    filtered_geo_df.reset_index(drop=False, inplace=True)
 
     print(f"Input nr of car nodes: {len(geo_df)}")
     print(f"Remaining nr of car nodes: {len(geo_df) - len(to_remove)}, after removing the {len(to_remove)} nodes that are within {min_distance} m of each other\n")
