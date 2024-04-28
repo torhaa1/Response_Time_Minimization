@@ -86,8 +86,6 @@ def find_connected_components(graph, verbose, plot):
         plt.show()
     return connected_components
 
-    return connected_components
-
 
 #######################################################################
 # EVENT POINTS
