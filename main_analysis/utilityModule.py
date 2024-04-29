@@ -870,7 +870,7 @@ def plot_horizontal_barplot_all_districts(district_stats_summary, figsize=(10, 5
     ax.set_xlabel('Response time [min]')
     ax.set_title('Response time statistics for each district')
 
-    plt.xticks(np.arange(0, 100, 5))
+    plt.xticks(np.arange(0, 86, 5))
     ax.set_facecolor('whitesmoke')
     plt.grid(which='both', linewidth=0.5)
     plt.show()
@@ -897,7 +897,7 @@ def plot_travel_time_scatterplot_district(car_to_events_df, district_stats, figs
     fig, ax = plt.subplots(figsize=figsize)
     for car in car_to_events_df['carNodeID'].unique():
         car_df = car_to_events_df[car_to_events_df['carNodeID'] == car]
-        plt.scatter(car_df.index, car_df['travel_time'] / 60, edgecolor='black', alpha=0.4, label=f"Car {car}", s=20)
+        plt.scatter(car_df.index, car_df['travel_time'] / 60, edgecolor='black', alpha=0.6, label=f"Car {car}", s=20)
 
     plt.axhline(y=district_stats['percentile_80'].values[0], color='black', linestyle='--', lw=2.5, label='80th percentile')
     plt.axhline(y=district_stats['mean'].values[0], color='r', linestyle='--', lw=2.5, label='Mean response time')
@@ -1036,9 +1036,9 @@ def plot_travel_time_violinplot_cars(car_to_events_df, figsize=(8, 4)):
 
 
 # Function to plot boxplot and violin plot side by side
-def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
+def plot_travel_time_box_violin_cars(car_to_events_df, y_axis_granularity=5, figsize=(10, 5)):
     """Plot both boxplot and violin plot side by side"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, sharey=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     # boxplot
     box = ax1.boxplot([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time']/60 for id in car_to_events_df['carNodeID'].unique()], patch_artist=True, widths=0.75)
     colors = plt.cm.Pastel1.colors
@@ -1048,7 +1048,8 @@ def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
     ax1.set_xlabel('Car Node ID')
     ax1.set_ylabel('Response time [min]')
     ax1.set_xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1))
-    ax1.set_xticklabels(car_to_events_df['carNodeID'].unique())
+    ax1.set_xticklabels(car_to_events_df['carNodeID'].unique(), rotation=45)
+    ax1.set_yticks(np.arange(min([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time'].min()/60 for id in car_to_events_df['carNodeID'].unique()]), max([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time'].max()/60 for id in car_to_events_df['carNodeID'].unique()]), y_axis_granularity))  # Adjust grid granularity
     ax1.grid()
     # violin plot
     violin = ax2.violinplot([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time']/60 for id in car_to_events_df['carNodeID'].unique()], widths=0.75, showmedians=True)
@@ -1059,6 +1060,7 @@ def plot_travel_time_box_violin_cars(car_to_events_df, figsize=(8, 5)):
     ax2.set_xlabel('Car Node ID')
     ax2.set_ylabel('Response time [min]')
     ax2.set_xticks(range(1, len(car_to_events_df['carNodeID'].unique())+1))
-    ax2.set_xticklabels(car_to_events_df['carNodeID'].unique())
+    ax2.set_xticklabels(car_to_events_df['carNodeID'].unique(), rotation=45)
+    ax2.set_yticks(np.arange(min([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time'].min()/60 for id in car_to_events_df['carNodeID'].unique()]), max([car_to_events_df.loc[car_to_events_df['carNodeID']==id, 'travel_time'].max()/60 for id in car_to_events_df['carNodeID'].unique()]), y_axis_granularity))  # Adjust grid granularity
     ax2.grid()
     plt.tight_layout(); plt.show()
