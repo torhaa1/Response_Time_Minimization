@@ -11,7 +11,7 @@ This repository explores location optimization of police units within their resp
 The preprocessing notebooks prepare and save data locally for fast loading in later analysis.  Fetches boundaries, road network (OpenStreetMap) and gridded population data (250x250m; from ssb.no) for each district. Edge speeds (speed limits) is added and network centrality measures are computed. An exploratory data analysis highlights the strong correlation between crime and population at the municipality level, justifying the exclusive use of population data for generating crime events.
 
 ### [**Analysis notebooks**](https://github.com/torhaa1/ResponseTimeMinimization/tree/main/main_analysis)
-The main analysis is performed for each district in separate notebooks. This folder also include the [statistics notebook](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) and [python module](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/utilityModule.py) that contains the larger custom functions. The number and locations of simulated events within a police district are based on the gridded population data. A polygon is then drawn around areas with high population density to define the sampling area for potential car locations. From this area, car points are randomly sampled and further filtered using centrality measures (closeness and betweenness). Then, a cost matrix for every origin-destination (car-to-event) pair is created. The problem is defined and solved as a MILP problem, aiming to minimize the total response time while adhering to the maximum workload for each car.
+The main analysis is performed for each district in separate notebooks. This folder also include the [statistics notebook](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) and [python module](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/utilityModule.py) that contains the larger custom functions. The number and locations of simulated events within a police district are based on the gridded population data. A polygon is then drawn around areas with high population density to define the sampling area for potential car locations. From this area, car points are randomly sampled and further filtered using centrality measures (closeness and betweenness). Then, a cost matrix for every origin-destination (car-to-event) pair is created. The problem is defined and solved as a MILP problem, aiming to minimize the total response time while adhering to a maximum workload for each car.
 
 **Spatial Insight**  
 Based on the analysis results, we generate the following visualizations:
@@ -25,7 +25,7 @@ Based on the analysis results, we generate the following visualizations:
 - **Within-District Statistics:** These statistics shows the response time and workload for each car, providing valuable insights for strategically positioning units more effectively.
 
 #### Model Assumptions on Response Time
-This model calculates the best possible scenario for response times by using the speed limit for each road segment as the base speed. Police vehicles are assumed to drive 20-36% faster than this speed limit. E.g., speeds are increased by 22% for roads with a 20 kph limit and by 36% for roads with a 110 kph limit (more details in [issue #8](https://github.com/torhaa1/Response_Time_Minimization/issues/8)).
+This model calculates the best possible scenario for response times by using the speed limit for each road segment as the base speed. Police vehicles are assumed to drive 20-36% faster than this speed limit. E.g., speeds are increased by 22% for roads with a 20 kph limit and by 36% for roads with a 110 kph limit (more details in [issue #8](https://github.com/torhaa1/Response_Time_Minimization/issues/8)). The minimum number of active police cars per district is rougly estimated based on population, police officer employees and number of registered patrol cars. More details in [issue #9](https://github.com/torhaa1/Response_Time_Minimization/issues/9).   
 It is important to note that the model does not account for potential decreases in travel speed due to external factors such as poor weather conditions, seasonal variations, or heavy traffic. Excluding these elements means that the model presents an idealized scenario, focusing on the theoretical minimum response time under optimal conditions. Additionally, the model does not allow the use of ferries to reduce drive time.
 
 
@@ -48,17 +48,10 @@ Several strategies were implemented to speed up processing and reduce the proble
 - Using dictionary data structures for max iteration speed and PuLP processing.
 - Cost matrix reduction by filtering out the highest travel times, assuming there likely is another closer car to the given event. Works well when population is spread around the network. Less applicable if population is clustered in one side of the network.
 
-### Example of ideal problem reduction
-Original problem:  50 potential car locations and 1000 simulated events results in a cost matrix of `50,000 rows`.   
-The size of the cost matrix (problem size) is reduced by:
-- Cut the car locations in half (=25 locations), by filtering on centrality measures.
-- Cut the cost matrix (25,000) in half, by filtering out top travel times.
-- Resulting in a cost matrix of `12,500 rows` (25% the size of the original)
-
 ---
 
 ## Example 1: Optimize locations for 4 Police Units in Oslo City
-This example demonstrates how to find the optimal locations for 4 police units in Oslo City. The goal is to minimize the total response time to all events while adhering to each car's maximum workload.
+This example demonstrates how to find the optimal locations for 4 police units in Oslo City. The goal is to minimize the total response time to all events while adhering to the maximum workload of each car.
 
 <img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/oslo_city_4cars_plot_locations.png" width="700">
 Figure 1 shows the solution with optimal placement of 4 units and their assigned events.   
@@ -68,7 +61,45 @@ Figure 2 plot the isochrones, illustrating the cars collective reach from the op
 
 
 ## Example 2: Compare response time across all 12 districts
-This example use 4 cars per district to compare the modeled ideal response times (arrival of first car) across all police districts. It’s important to note that there is a significant variation in population density and area coverage among the districts.
+This example compare the modeled ideal response times (arrival of first car) across all police districts. Note that there is a significant variation in population density and area coverage between the districts.
+The table below shows the number of cars used for each district.
+
+
+<table border="1" class="dataframe">
+  <tbody>
+    <tr>
+      <th>Police districts</th>
+      <td>Finnmark</td>
+      <td>Troms</td>
+      <td>Nordland</td>
+      <td>Trondelag</td>
+      <td>Inland</td>
+      <td>MoreRomsdal</td>
+      <td>West</td>
+      <td>SouthWest</td>
+      <td>Agder</td>
+      <td>SouthEast</td>
+      <td>East</td>
+      <td>Oslo</td>
+    </tr>
+    <tr>
+      <th>Nr of cars</th>
+      <td>4</td>
+      <td>4</td>
+      <td>4</td>
+      <td>7</td>
+      <td>6</td>
+      <td>4</td>
+      <td>9</td>
+      <td>7</td>
+      <td>5</td>
+      <td>10</td>
+      <td>11</td>
+      <td>14</td>
+    </tr>
+  </tbody>
+</table>
+
 
 <img src="https://github.com/torhaa1/ResponseTimeMinimization/blob/main/figures/4cars_between-district_stats.png" width="700">
-Figure 3 show the main response time statistics between the districts, when using 4 cars per district.
+Figure 3 show the main response time statistics between the districts.
