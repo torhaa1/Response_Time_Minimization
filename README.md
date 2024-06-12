@@ -3,7 +3,7 @@
 ## Introduction
 This repository explores location optimization of police units within their respective police district, with the aim to minimize response time to incidents. The analysis is performed separately for each police district. The challenge is framed as a MILP problem and is defined and solved using the PuLP library.
 
-*A Mixed-Integer Linear Programming (MILP) problem identifies the optimal solution from a finite set of possibilities, with both linear relationships and integer constraints. This is suitable for our scenario, where the objective is optimal placement of police units (discrete choices) while minimizing response times (a continuous outcome). The PuLP Python library, offers an intuitive and efficient way to define and solve such problems.*
+*A Mixed-Integer Linear Programming (MILP) problem identifies the optimal solution from a finite set of possibilities, with both linear relationships and integer constraints.* This is suitable for our scenario, where the objective is optimal placement of police units (discrete choices) while minimizing response times (a continuous outcome). The PuLP Python library, offers an intuitive and efficient way to define and solve such problems.
 
 ## Repository content
 
@@ -12,6 +12,12 @@ The preprocessing notebooks prepare and save data locally for fast loading in la
 
 ### [**Analysis notebooks**](https://github.com/torhaa1/ResponseTimeMinimization/tree/main/main_analysis)
 The main analysis is performed for each district in separate notebooks. This folder also include the [statistics notebook](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) and [python module](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/utilityModule.py) that contains the larger custom functions. The number and locations of simulated events within a police district are based on the gridded population data. A polygon is then drawn around areas with high population density to define the sampling area for potential car locations. From this area, car points are randomly sampled and further filtered using centrality measures (closeness and betweenness). Then, a cost matrix for every origin-destination (car-to-event) pair is created. The problem is defined and solved as a MILP problem, aiming to minimize the total response time while adhering to a maximum workload for each car.
+
+**For a quick understanding, take a look at:**
+- [main_analysis/20_East_district_v4.0.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/20_East_district_v4.0.ipynb)  - shows the analysis workflow for one district.
+- [main_analysis/43_district_statistics.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) - shows the relevant statistics after analyzing all districts.
+
+<br>
 
 **Spatial Insight**  
 Based on the analysis results, we generate the following visualizations:
