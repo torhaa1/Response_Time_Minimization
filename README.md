@@ -13,12 +13,6 @@ The preprocessing notebooks prepare and save data locally for fast loading in la
 ### [**Analysis notebooks**](https://github.com/torhaa1/ResponseTimeMinimization/tree/main/main_analysis)
 The main analysis is performed for each district in separate notebooks. This folder also include the [statistics notebook](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) and [python module](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/utilityModule.py) that contains the larger custom functions. The number and locations of simulated events within a police district are based on the gridded population data. A polygon is then drawn around areas with high population density to define the sampling area for potential car locations. From this area, car points are randomly sampled and further filtered using centrality measures (closeness and betweenness). Then, a cost matrix for every origin-destination (car-to-event) pair is created. The problem is defined and solved as a MILP problem, aiming to minimize the total response time while adhering to a maximum workload for each car.
 
-**For a quick understanding, take a look at:**
-- [main_analysis/20_East_district_v4.0.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/20_East_district_v4.0.ipynb)  - shows the analysis workflow for one district.
-- [main_analysis/43_district_statistics.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) - shows the relevant statistics after analyzing all districts.
-
-<br>
-
 **Spatial Insight**  
 Based on the analysis results, we generate the following visualizations:
 - A map displaying the optimal car locations along with their assigned events.
@@ -29,6 +23,11 @@ Based on the analysis results, we generate the following visualizations:
 - **Single District Statistics:** These statistics illustrate the best possible response times for a district, with a set number of cars allocated. They serve as an objective baseline for comparing against historical data. Additionally, changes in modeled response time can be quantified by adding or removing cars from the district.
 - **Between-District Statistics:** These provide a high-level overview and an objective comparison of modeled response times across different districts nationally. It highlights which districts that are in most need of more resources to meet an acceptable modeled response time.
 - **Within-District Statistics:** These statistics shows the response time and workload for each car, providing valuable insights for strategically positioning units more effectively.
+
+**For a quick understanding, take a look at:**
+- [main_analysis/20_East_district_v4.0.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/20_East_district_v4.0.ipynb)  - shows the analysis workflow for one district.
+- [main_analysis/43_district_statistics.ipynb](https://github.com/torhaa1/ResponseTimeMinimization/blob/main/main_analysis/43_district_statistics.ipynb) - shows the relevant statistics after analyzing all districts.
+
 
 #### Model Assumptions on Response Time
 This model calculates the best possible scenario for response times by using the speed limit for each road segment as the base speed. Police vehicles are assumed to drive 20-36% faster than this speed limit. E.g., speeds are increased by 22% for roads with a 20 kph limit and by 36% for roads with a 110 kph limit (more details in [issue #8](https://github.com/torhaa1/Response_Time_Minimization/issues/8)). The minimum number of active police cars per district is rougly estimated based on population, police officer employees and number of registered patrol cars. More details in [issue #9](https://github.com/torhaa1/Response_Time_Minimization/issues/9).   
